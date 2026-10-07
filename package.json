@@ -1,0 +1,71 @@
+{
+  "name": "kairos-bridge-ai-journal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kairos-Bridge AI Journal: a portable, user-owned memory journal for AI apps, served over MCP. Your journal lives on your own machine.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "kairos-journal": "dist/src/cli.js",
+    "kairos-journal-mcp": "dist/src/server.js"
+  },
+  "files": [
+    "dist/src",
+    "src",
+    "tsconfig.json",
+    "package-lock.json",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "COMMERCIAL-LICENSE.md",
+    "CONTRIBUTING.md",
+    "CLA.md",
+    "examples"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"for (const f of ['dist/src/cli.js','dist/src/server.js']) require('fs').chmodSync(f, 0o755)\"",
+    "test": "npm run build && node --test --test-concurrency=1 dist/test/",
+    "bench": "npm run build && node dist/bench/storage-bench.js --entries 300000",
+    "start": "node dist/src/server.js"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "better-sqlite3": "^12.11.1",
+    "zod": "^3.25.76"
+  },
+  "main": "dist/src/server.js",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memory",
+    "journal",
+    "sqlite",
+    "local-first"
+  ],
+  "author": {
+    "name": "Steffan Douglas Haskins",
+    "email": "steffan.haskins@gmail.com"
+  },
+  "kairosJournal": {
+    "displayName": "Kairos-Bridge AI Journal",
+    "sourceUrl": "https://github.com/Steffan005/Kairos-Bridge-AI-Journal",
+    "commercialContact": "steffan.haskins@gmail.com"
+  },
+  "homepage": "https://github.com/Steffan005/Kairos-Bridge-AI-Journal#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Steffan005/Kairos-Bridge-AI-Journal/issues",
+    "email": "steffan.haskins@gmail.com"
+  }
+}

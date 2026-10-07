@@ -1,0 +1,84 @@
+Kairos-Bridge AI Journal: a portable, user-owned memory journal for AI apps,
+served over the Model Context Protocol (MCP).
+Copyright (C) 2026  Steffan Douglas Haskins
+
+Kairos Journal, created by Steffan Douglas Haskins.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program (see the file LICENSE).  If not, see
+<https://www.gnu.org/licenses/>.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Contact: Steffan Douglas Haskins <steffan.haskins@gmail.com>
+Source:  https://github.com/Steffan005/Kairos-Bridge-AI-Journal
+
+
+ADDITIONAL TERMS UNDER SECTION 7 OF THE GNU AFFERO GENERAL PUBLIC LICENSE
+=========================================================================
+
+As permitted by section 7(b) of the GNU Affero General Public License
+version 3, the following additional term applies to this program and to
+every covered work based on it:
+
+  Attribution.  You must preserve, unaltered, both of the following notices
+  in all copies of this program and of any work based on it, whether in
+  source or object form, and in any Appropriate Legal Notices (as defined
+  in section 0 of the License) displayed by such works:
+
+    (1) the copyright notice
+        "Copyright (C) 2026 Steffan Douglas Haskins"; and
+    (2) the author attribution
+        "Kairos Journal, created by Steffan Douglas Haskins".
+
+  This term does not grant permission to use the author's name to endorse
+  or promote modified versions, and it does not prevent you from adding
+  your own copyright notices for your own changes or from marking your
+  version as modified, as section 5(a) of the License requires.
+
+Under section 7, these additional terms must be kept with the program.  The
+source files carry a pointer to this NOTICE file.
+
+
+SOURCE CODE FOR NETWORK USERS (SECTION 13)
+==========================================
+
+When this program runs in HTTP mode, people can interact with it over a
+network.  The program offers them its Corresponding Source through the
+"journal_about" MCP tool, the "kairos-journal://about" MCP resource, the
+GET /about HTTP endpoint and the server's MCP instructions.  Each of these
+reports the source location configured in the KAIROS_JOURNAL_SOURCE_URL
+environment variable or, by default, in the "kairosJournal.sourceUrl" field
+of package.json.  If you modify this program and let others use it over a
+network, set that location to where your modified source can be downloaded
+at no charge.
+
+
+COMMERCIAL LICENSING
+====================
+
+The copyright holder also offers this program under separate commercial
+licenses, for use without the obligations of the GNU AGPL (for example in
+closed-source products or services).  See COMMERCIAL-LICENSE.md, a plain-
+language summary only; terms are set solely in a signed agreement.
+Contact: steffan.haskins@gmail.com
+
+
+PATENT NOTICE
+=============
+
+Patent pending, U.S. Provisional 63/912,083.
+
+Section 11 of the GNU Affero General Public License grants every recipient
+of this program a license under the contributor's essential patent claims.
+See the License for the exact terms.

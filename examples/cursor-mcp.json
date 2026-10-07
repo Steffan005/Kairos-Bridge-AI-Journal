@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "kairos-journal": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/YOUR_NAME/Kairos-Bridge-AI-Journal/dist/src/server.js"],
+      "env": {
+        "KAIROS_JOURNAL_ACTOR": "cursor"
+      }
+    }
+  }
+}

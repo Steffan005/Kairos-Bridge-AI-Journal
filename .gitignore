@@ -1,0 +1,28 @@
+# dependencies and build output
+node_modules/
+dist/
+
+# journal databases (never commit personal data)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# exports and benchmark scratch output (bench JSON summaries are small and kept)
+exports/
+bench-results/*.db*
+bench-results/*.json.tmp
+*.tgz
+
+# logs, OS and editor files
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+coverage/
+.env
+.env.*

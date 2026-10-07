@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-07T14:54:27.637Z",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor",
+    "cores": 8,
+    "ram_gb": 16,
+    "platform": "linux 6.12.94+",
+    "node": "v20.19.2"
+  },
+  "entries": 300000,
+  "text": {
+    "avg_chars": 848,
+    "median_chars": 710,
+    "min_chars": 121,
+    "max_chars": 3609,
+    "total_text_mb": 242.66
+  },
+  "storage": {
+    "file_bytes": 479887360,
+    "file_mb": 457.66,
+    "bytes_per_entry": 1600,
+    "raw_text_bytes_per_entry": 848,
+    "overhead_ratio": 1.89,
+    "entries_table_and_indexes_mb": 327.44,
+    "full_text_index_mb": 129.3,
+    "wal_bytes_after_checkpoint": 0,
+    "json_export_mb": 339.12,
+    "per_table": [
+      {
+        "name": "entries",
+        "mb": 319.55
+      },
+      {
+        "name": "entries_fts_data",
+        "mb": 125.28
+      },
+      {
+        "name": "sqlite_autoindex_entries_1",
+        "mb": 7.8
+      },
+      {
+        "name": "entries_fts_docsize",
+        "mb": 3.86
+      },
+      {
+        "name": "entries_fts_idx",
+        "mb": 0.14
+      },
+      {
+        "name": "sqlite_sequence",
+        "mb": 0.02
+      },
+      {
+        "name": "sqlite_schema",
+        "mb": 0.02
+      },
+      {
+        "name": "sqlite_autoindex_pins_1",
+        "mb": 0.02
+      },
+      {
+        "name": "sqlite_autoindex_meta_1",
+        "mb": 0.02
+      },
+      {
+        "name": "pins",
+        "mb": 0.02
+      },
+      {
+        "name": "meta",
+        "mb": 0.02
+      },
+      {
+        "name": "entries_fts_config",
+        "mb": 0.02
+      }
+    ]
+  },
+  "latency": {
+    "insert_entries_per_sec": 5577,
+    "insert_total_sec": 53.79,
+    "open_ms": 2.89,
+    "wake_first_ms": 3.83,
+    "wake_default": {
+      "p50_ms": 0.43,
+      "p95_ms": 0.61,
+      "max_ms": 4.19
+    },
+    "wake_briefing_chars": 5953,
+    "wake_max_size": {
+      "p50_ms": 1.77,
+      "p95_ms": 2.29,
+      "max_ms": 2.63
+    },
+    "search_all": {
+      "queries": 160,
+      "p50_ms": 34.69,
+      "p95_ms": 96.02,
+      "max_ms": 164.31,
+      "avg_hits": 10
+    },
+    "search_very_common_words": {
+      "p50_ms": 91.29,
+      "p95_ms": 164.31,
+      "max_ms": 164.31
+    },
+    "single_write_with_fsync": {
+      "p50_ms": 1.5,
+      "p95_ms": 2.53,
+      "max_ms": 10.26
+    },
+    "verify_full_chain_sec": 3.4,
+    "verify_ok": true,
+    "export_json_sec": 7.35
+  }
+}
