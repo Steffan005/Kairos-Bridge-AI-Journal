@@ -2,6 +2,7 @@
 // Copyright (C) 2026  Steffan Douglas Haskins
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -13,8 +14,9 @@ import { ATTRIBUTION, COPYRIGHT, LICENSE_SPDX, LICENSE_URL } from "../../src/abo
 import { Accounts } from "./accounts.js";
 import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
+import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
+export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
-export interface PreviewOptions { baseURL: string; directory: string; secret: string }
 const MAX_BODY = 64 * 1024;
 async function body(req: http.IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = []; let size = 0;
@@ -37,13 +39,20 @@ async function forward(res: http.ServerResponse, response: Response): Promise<vo
 
 /** Deliberately restricted to loopback: this is not a public customer service yet. */
 export async function createPreview(options: PreviewOptions) {
-  const url = new URL(options.baseURL);
-  if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.protocol !== "http:" || url.pathname !== "/" || url.search || url.username || url.password) {
-    throw new Error("The synthetic preview requires a loopback HTTP base URL");
-  }
-  const baseURL = url.origin;
+  return createService(previewSettings(options));
+}
+/** Explicit, invitation-gated development staging behind an HTTPS-terminating proxy. */
+export async function createStaging(options: StagingOptions) {
+  return createService(stagingSettings(options));
+}
+async function createService(options: ServiceSettings) {
+  const url = new URL(options.baseURL), baseURL = url.origin;
+  const staging = options.kind === "hosted-invited-staging";
+  const backupNotice = staging
+    ? "Hosting disk snapshots may retain deleted data; invited development staging"
+    : "No automatic backups in this preview";
   const accounts = new Accounts(options.directory);
-  const { auth, database } = makeAuth(baseURL, options.secret, accounts);
+  const { auth, database } = makeAuth(baseURL, options.secret, accounts, { staging });
   await migrateAuth(auth, database);
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
   const owner = async (req: http.IncomingMessage) => {
@@ -56,15 +65,18 @@ export async function createPreview(options: PreviewOptions) {
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("referrer-policy", "no-referrer");
     try {
-      if (req.headers.host !== url.host) throw new AccessError(403, "Host is not allowed");
       const target = new URL(req.url ?? "/", baseURL);
       const path = target.pathname, method = req.method ?? "GET";
+      // The platform's internal probe needs no journal/auth access or public Host header.
+      if (path === "/healthz" && method === "GET") return json(res, 200, { ok: true, mode: options.kind });
+      if (req.headers.host !== url.host) throw new AccessError(403, "Host is not allowed");
+      // The public listener must sit behind the trusted edge, never expose this port directly.
+      if (staging && req.headers["x-forwarded-proto"] !== "https") throw new AccessError(403, "Use the secure Kairos address");
       if (req.headers.origin && req.headers.origin !== baseURL) throw new AccessError(403, "Origin is not allowed");
-      if (path === "/healthz" && method === "GET") return json(res, 200, { ok: true, mode: "local-synthetic-preview" });
       if (path === "/about" && method === "GET") return json(res, 200, {
         attribution: ATTRIBUTION, copyright: COPYRIGHT, license: LICENSE_SPDX, license_url: LICENSE_URL,
-        source: "https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/chatgpt/private-journal-service",
-        status: "Local synthetic preview; no public service or native iPhone app released",
+        source: options.sourceURL,
+        status: staging ? "Invited development staging; no customer service or native iPhone app released" : "Local development preview; no public service or native iPhone app released",
       });
       if (["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"].includes(path) && method === "GET") return json(res, 200, {
         resource: `${baseURL}/mcp`, authorization_servers: [`${baseURL}/api/auth`],
@@ -75,10 +87,17 @@ export async function createPreview(options: PreviewOptions) {
         return forward(res, await metadataHandler(new Request(target, { headers })));
       }
       if (path.startsWith("/api/auth/")) {
-        const bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
+        let bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
         if (path === "/api/auth/sign-up/email") {
           const input = JSON.parse(bytes!.toString());
           if (typeof input.email !== "string" || !input.email.toLowerCase().endsWith(".test")) throw new AccessError(400, "Use a synthetic email ending in .test for this preview");
+          if (staging) {
+            const supplied = Buffer.from(typeof input.invite_code === "string" ? input.invite_code : "");
+            const expected = Buffer.from(options.inviteCode!);
+            if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new AccessError(403, "A staging invitation is required to create a test account");
+            delete input.invite_code; // Never forward/store the invitation in account metadata.
+            bytes = Buffer.from(JSON.stringify(input));
+          }
         }
         // Removing/changing a library consent also invalidates already-issued JWTs.
         const consentMutation = ["/api/auth/oauth2/delete-consent", "/api/auth/oauth2/update-consent"].includes(path);
@@ -91,7 +110,7 @@ export async function createPreview(options: PreviewOptions) {
         let grant;
         try { grant = await verifyGrant(auth, accounts, baseURL, req.headers.authorization); }
         catch (e) {
-          res.setHeader("www-authenticate", `Bearer resource_metadata="${baseURL}/.well-known/oauth-protected-resource/mcp", scope="journal:read"`);
+          res.setHeader("www-authenticate", `Bearer resource_metadata="${baseURL}/.well-known/oauth-protected-resource/mcp", scope="journal:read journal:write"${req.headers.authorization ? ', error="invalid_token"' : ''}`);
           throw e;
         }
         if (method !== "POST") { res.setHeader("allow", "POST"); throw new AccessError(405, "Use POST for this stateless MCP endpoint"); }
@@ -114,14 +133,18 @@ export async function createPreview(options: PreviewOptions) {
         if (path === "/consent") {
           const context = await auth.$context;
           if (!await verifyOAuthQueryParams(target.search.slice(1), context.secret)) throw new AccessError(400, "This connection request has expired or changed. Start again from your AI app.");
-          await owner(req);
+          const session = await auth.api.getSession({ headers });
+          if (!session) throw new AccessError(401, "Please sign in to Kairos");
           const client = await auth.api.getOAuthClientPublic({ headers, query: { client_id: target.searchParams.get("client_id") ?? "" } });
-          consent = { client: client.client_name ?? "AI app", scopes: (target.searchParams.get("scope") ?? "").split(" ").filter(Boolean) };
+          const clientId = target.searchParams.get("client_id") ?? "";
+          consent = { client: client.client_name ?? "AI app", clientId, email: session.user.email,
+            redirectHost: new URL(target.searchParams.get("redirect_uri")!).hostname,
+            scopes: (target.searchParams.get("scope") ?? "").split(" ").filter(Boolean) };
         }
         if (path === "/journal") {
           try { await owner(req); } catch { res.writeHead(302, { location: "/sign-in" }); return res.end(); }
         }
-        const output = page(path === "/sign-in" ? "sign-in" : path === "/consent" ? "consent" : "journal", consent);
+        const output = page(path === "/sign-in" ? "sign-in" : path === "/consent" ? "consent" : "journal", consent, { staging });
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": output.csp }); return res.end(output.html);
       }
       if (path.startsWith("/api/journal")) {
@@ -130,7 +153,7 @@ export async function createPreview(options: PreviewOptions) {
         const bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
         return await accounts.locked(userId, async () => {
           if (path === "/api/journal/disconnect" && method === "POST") { await disconnect(auth, accounts, userId); return json(res, 200, { disconnected: true }); }
-          if (path === "/api/journal" && method === "DELETE") { await disconnect(auth, accounts, userId); accounts.delete(userId); return json(res, 200, { deleted: true, backups: "No automatic backups in this preview" }); }
+          if (path === "/api/journal" && method === "DELETE") { await disconnect(auth, accounts, userId); accounts.delete(userId); return json(res, 200, { deleted: true, backups: backupNotice }); }
           if (path === "/api/journal/create" && method === "POST") { accounts.recreate(userId); return json(res, 201, { created: true }); }
           const account = accounts.get(userId);
           if (account.deleted) {
@@ -143,7 +166,7 @@ export async function createPreview(options: PreviewOptions) {
             if (path === "/api/journal" && method === "GET") {
               const { adapter } = await auth.$context;
               const consents = await adapter.findMany<{ clientId: string; scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: userId }] });
-              const entries = [...journal.pinned(), ...journal.recent(50)].sort((a, b) => b.seq - a.seq).slice(0, 50);
+              const entries = [...new Map([...journal.pinned(), ...journal.recent(50)].map(entry => [entry.id, entry])).values()].sort((a, b) => b.seq - a.seq).slice(0, 50);
               return json(res, 200, { deleted: false, entries, connections: consents.map(c => ({ clientId: c.clientId, scopes: c.scopes })), count: journal.count() });
             }
             if (path === "/api/journal/notes" && method === "POST") {
@@ -176,7 +199,7 @@ export async function createPreview(options: PreviewOptions) {
   server.headersTimeout = 10_000;
   return {
     server, auth, accounts,
-    listen: () => new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(Number(url.port || 80), url.hostname, () => { server.off("error", reject); resolve(); }); }),
+    listen: () => new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.listenPort, options.listenHost, () => { server.off("error", reject); resolve(); }); }),
     close: async () => { if (server.listening) await new Promise<void>((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeIdleConnections(); }); database.close(); accounts.close(); },
   };
 }

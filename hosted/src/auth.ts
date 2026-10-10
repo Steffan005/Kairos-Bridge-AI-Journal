@@ -13,14 +13,14 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import type { Accounts } from "./accounts.js";
 
-export function makeAuth(baseURL: string, secret: string, accounts: Accounts) {
+export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: { staging?: boolean } = {}) {
   if (secret.length < 32) throw new Error("Provide a random authentication secret of at least 32 characters");
   const database = new Database(join(accounts.directory, "auth.db"));
   database.pragma("journal_mode = WAL");
   database.pragma("synchronous = FULL");
   chmodSync(join(accounts.directory, "auth.db"), 0o600);
   const auth = betterAuth({
-    appName: "Kairos synthetic preview", baseURL, secret, database,
+    appName: "Kairos Journal preview", baseURL, secret, database,
     trustedOrigins: [baseURL],
     disabledPaths: ["/token"], // Never expose a generic account JWT as a journal credential.
     emailAndPassword: { enabled: true, minPasswordLength: 12 },
@@ -31,14 +31,19 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts) {
         loginPage: "/sign-in", consentPage: "/consent",
         scopes: ["openid", "offline_access", "journal:read", "journal:write"],
         grantTypes: ["authorization_code", "refresh_token"],
-        resources: [{ identifier: `${baseURL}/mcp`, allowedScopes: ["openid", "journal:read", "journal:write", "offline_access"], accessTokenTtl: 300 }],
+        refreshTokenReuseInterval: 30,
+        resources: [{ identifier: `${baseURL}/mcp`, allowedScopes: ["openid", "journal:read", "journal:write", "offline_access"], accessTokenTtl: 900 }],
         clientRegistrationDefaultResources: [`${baseURL}/mcp`],
-        allowDynamicClientRegistration: true,
-        allowUnauthenticatedClientRegistration: true,
+        allowDynamicClientRegistration: !options.staging,
+        allowUnauthenticatedClientRegistration: !options.staging,
         clientPrivileges: () => false, resourcePrivileges: () => false,
         customAccessTokenClaims: ({ user }) => ({ kairos_epoch: user ? accounts.get(user.id).epoch : -1 }),
       }),
-      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28",
+        // First-provider staging trusts metadata hosted by Anthropic, not arbitrary client URLs.
+        // Narrow to the actual document URL after the physical Claude flow identifies it.
+        isMetadataDocumentUrlAllowed: clientId => !options.staging || new URL(clientId).origin === "https://claude.ai",
+      }),
     ],
   });
   return { auth, database };
@@ -60,7 +65,7 @@ export async function migrateAuth(auth: KairosAuth, database: Database.Database)
 export class AccessError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 export type Grant = { userId: string; epoch: number; readOnly: boolean; clientId: string };
 
-/** Signature, issuer/audience/expiry, active session/client/consent, and live generation all matter. */
+/** Signature, issuer/audience/expiry, active account/client/consent, and live generation all matter. */
 export async function verifyGrant(auth: KairosAuth, accounts: Accounts, baseURL: string, authorization?: string): Promise<Grant> {
   const match = /^Bearer ([^\s]+)$/i.exec(authorization ?? "");
   if (!match) throw new AccessError(401, "Connect Kairos and sign in to access your journal");
@@ -69,24 +74,24 @@ export async function verifyGrant(auth: KairosAuth, accounts: Accounts, baseURL:
     const jwks = await auth.api.getJwks();
     ({ payload } = await jwtVerify(match[1], createLocalJWKSet(jwks), {
       issuer: `${baseURL}/api/auth`, audience: `${baseURL}/mcp`,
-      requiredClaims: ["exp", "iat", "sub", "sid", "azp", "scope", "kairos_epoch"],
+      requiredClaims: ["exp", "iat", "sub", "azp", "scope", "kairos_epoch"],
     }));
   } catch { throw new AccessError(401, "This connection is invalid or expired; reconnect Kairos"); }
-  const { sub, sid, azp, scope, kairos_epoch: epoch, cnf } = payload;
-  if (typeof sub !== "string" || typeof sid !== "string" || typeof azp !== "string" || typeof scope !== "string" || !Number.isSafeInteger(epoch) || cnf) {
+  const { sub, azp, scope, kairos_epoch: epoch, cnf } = payload;
+  if (typeof sub !== "string" || typeof azp !== "string" || typeof scope !== "string" || !Number.isSafeInteger(epoch) || cnf) {
     throw new AccessError(401, "Unsupported journal authorization");
   }
   const scopes = scope.split(" ");
   if (!scopes.includes("journal:read")) throw new AccessError(403, "Journal read permission is required");
   const { adapter } = await auth.$context;
-  const [session, user, client, consent] = await Promise.all([
-    adapter.findOne<{ userId: string; expiresAt: Date }>({ model: "session", where: [{ field: "id", value: sid }] }),
+  const [user, client, consent] = await Promise.all([
     adapter.findOne({ model: "user", where: [{ field: "id", value: sub }] }),
     adapter.findOne<{ disabled: boolean }>({ model: "oauthClient", where: [{ field: "clientId", value: azp }] }),
     adapter.findOne<{ scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: sub }, { field: "clientId", value: azp }] }),
   ]);
   const account = accounts.get(sub);
-  if (!user || !session || session.userId !== sub || new Date(session.expiresAt).getTime() <= Date.now() || !client || client.disabled || !consent || !scopes.every(s => consent.scopes.includes(s)) || account.deleted || account.epoch !== epoch) {
+  // Browser sign-out does not revoke an approved AI connection. Owner Disconnect does.
+  if (!user || !client || client.disabled || !consent || !scopes.every(s => consent.scopes.includes(s)) || account.deleted || account.epoch !== epoch) {
     throw new AccessError(401, "This connection was disconnected; connect again to continue");
   }
   return { userId: sub, epoch: epoch as number, readOnly: !scopes.includes("journal:write"), clientId: azp };

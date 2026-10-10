@@ -91,7 +91,7 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       client = await register();
       const metadata = await (await request("/.well-known/oauth-authorization-server/api/auth")).json();
       assert.equal(metadata.issuer, baseURL + "/api/auth"); assert.equal(metadata.code_challenge_methods_supported[0], "S256");
-      const noAccess = await mcpRequest(); assert.equal(noAccess.status, 401); assert.match(noAccess.headers.get("www-authenticate")!, /resource_metadata/);
+      const noAccess = await mcpRequest(); assert.equal(noAccess.status, 401); assert.match(noAccess.headers.get("www-authenticate")!, /resource_metadata/); assert.match(noAccess.headers.get("www-authenticate")!, /scope="journal:read journal:write"/);
       assert.equal((await request("/api/journal")).status, 401);
       assert.equal((await request("/api/journal", { headers: { origin: "https://hostile.example" } })).status, 403);
       assert.equal((await request("/consent?client_id=changed", { headers: { cookie: a.cookie } })).status, 400);
@@ -127,6 +127,9 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       bNoteId = JSON.parse(bob.content[0].text).entry.id;
     });
     await t.test("tenant isolation for read, search, write, pin, unpin, verify and export", async () => {
+      await tool(at.access_token, "journal_pin", { id: aNoteId });
+      const ownerView = await (await request("/api/journal", { headers: { cookie: a.cookie } })).json();
+      assert.equal(ownerView.entries.filter((entry: { id: string }) => entry.id === aNoteId).length, 1, "a pinned recent entry appears once in the owner's journal");
       for (const name of ["journal_wake", "journal_search", "journal_continue", "journal_verify"]) {
         const args = name === "journal_search" ? { query: "terracotta" } : name === "journal_continue" ? { project: "kitchen" } : {};
         const result = await tool(at.access_token, name, { ...args, owner_id: b.user.id });
@@ -161,7 +164,7 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       const payload = decodeJwt(at.access_token);
       const valid = await preview.auth.api.signJWT({ body: { payload } });
       assert.equal((await mcpRequest(valid.token)).status, 200, "control token signed with the same claims is valid");
-      for (const override of [{ iss: "https://another-issuer.example" }, { aud: "https://another-resource.example" }, { exp: 1 }, { sid: "nonexistent-session" }, { scope: "journal:write" }]) {
+      for (const override of [{ iss: "https://another-issuer.example" }, { aud: "https://another-resource.example" }, { exp: 1 }, { azp: "nonexistent-client" }, { kairos_epoch: 999 }, { scope: "journal:write" }]) {
         // Sign with the actual server's key, so this tests claims rather than just a broken signature.
         const signed = await preview.auth.api.signJWT({ body: { payload: { ...payload, ...override } } });
         for (const [key, value] of Object.entries(override)) assert.deepEqual(decodeJwt(signed.token)[key], value);
@@ -182,6 +185,35 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       await preview.close(); preview = await createPreview({ baseURL, directory, secret }); await preview.listen();
       assert.match(JSON.stringify(await tool(at.access_token, "journal_continue", { project: "kitchen" })), /cobalt blue/);
       assert.match(JSON.stringify(await tool(bt.access_token, "journal_continue", { project: "kitchen" })), /terracotta/);
+    });
+    await t.test("browser sign-out and expiry preserve approved AI access; refresh retries reuse the response", async () => {
+      // The earlier deliberate authorization-code replay revoked that code's refresh token.
+      // Use a new, unreplayed grant to isolate the sign-out behavior.
+      at = await authorize(client, a.cookie);
+      const { adapter } = await preview.auth.$context;
+      assert.ok(at.refresh_token, "offline grant includes a refresh token");
+      const rowsBefore = await adapter.findMany<{ userId: string; clientId: string; scopes: string[] }>({ model: "oauthRefreshToken", where: [{ field: "userId", value: a.user.id }] });
+      assert.ok(rowsBefore.some(r => r.clientId === client.client_id && r.scopes.includes("offline_access")));
+      const bobSession = decodeJwt(bt.access_token).sid as string;
+      await adapter.update({ model: "session", where: [{ field: "id", value: bobSession }], update: { expiresAt: new Date(1) } });
+      assert.equal((await mcpRequest(bt.access_token)).status, 200, "expired browser session is not an AI disconnect");
+      await adapter.update({ model: "session", where: [{ field: "id", value: bobSession }], update: { expiresAt: new Date(Date.now() + 86_400_000) } });
+      assert.equal((await post("/api/auth/sign-out", {}, a.cookie)).status, 200);
+      const rowsAfter = await adapter.findMany<{ userId: string; clientId: string; scopes: string[] }>({ model: "oauthRefreshToken", where: [{ field: "userId", value: a.user.id }] });
+      assert.ok(rowsAfter.some(r => r.clientId === client.client_id && r.scopes.includes("offline_access")), "offline authorization survives browser sign-out");
+      assert.equal((await request("/api/journal", { headers: { cookie: a.cookie } })).status, 401, "browser cookie is no longer authorized");
+      assert.equal((await mcpRequest(at.access_token)).status, 200, "approved AI remains authorized after browser sign-out");
+      const originalRefresh = at.refresh_token;
+      const refresh = () => request("/api/auth/oauth2/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "refresh_token", client_id: client.client_id, refresh_token: originalRefresh, resource: baseURL + "/mcp" }) });
+      const first = await refresh(); const renewed = await first.json(); assert.equal(first.status, 200, renewed.error_description ?? renewed.error ?? "refresh succeeds");
+      assert.notEqual(renewed.refresh_token, originalRefresh, "refresh token rotates");
+      assert.ok(renewed.expires_in > 800 && renewed.expires_in <= 900, "access lifetime is fifteen minutes");
+      const retry = await refresh(); assert.equal(retry.status, 200); const repeated = await retry.json();
+      assert.equal(repeated.access_token, renewed.access_token); assert.equal(repeated.refresh_token, renewed.refresh_token);
+      assert.equal((await mcpRequest(renewed.access_token)).status, 200, "new token works without the former browser session");
+      at = { ...at, ...renewed };
+      const signedIn = await post("/api/auth/sign-in/email", { email: "alice@example.test", password: "synthetic-testing-password" });
+      assert.equal(signedIn.status, 200); a.cookie = cookieFrom(signedIn);
     });
     await t.test("disconnect rejects existing JWTs and refresh tokens on next request", async () => {
       const pending = await startAuthorization(client, a.cookie);

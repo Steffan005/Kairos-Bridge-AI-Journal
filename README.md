@@ -5,7 +5,7 @@
 Your AI reads your journal before it talks to you and writes a short note afterward. Switch from Claude to ChatGPT to Cursor and each one still knows you, because the memory sits in a file on **your** computer and not inside any company's app.
 
 > Patent pending, U.S. Provisional 63/912,083.
-> Status: private preview (v0.1.0). Not published yet. Planned home: https://github.com/Steffan005/Kairos-Bridge-AI-Journal
+> Status: development preview (v0.1.0). Source is on GitHub; no npm release, customer-hosted connector or native iPhone app is released. Source: https://github.com/Steffan005/Kairos-Bridge-AI-Journal
 > Contact: Steffan Douglas Haskins, steffan.haskins@gmail.com
 > Kairos Journal, created by Steffan Douglas Haskins. Copyright (C) 2026 Steffan Douglas Haskins. Free, open-source software under the GNU AGPL-3.0-or-later (see [License](#license)).
 
@@ -13,7 +13,7 @@ Your AI reads your journal before it talks to you and writes a short note afterw
 
 ## What it does, in plain words
 
-**Hosted work in progress:** [The separate hosted adapter](hosted/README.md) is a local, synthetic-only preview with account isolation and OAuth acceptance checks. It is not a released phone connector or native iPhone app. The desktop journal described below remains available separately.
+**Hosted work in progress:** [The separate hosted adapter](hosted/README.md) has local account/OAuth acceptance checks and a prepared invitation-gated HTTPS staging path. Hosting and the actual Claude iPhone OAuth flow remain pending. The desktop journal described below remains available separately.
 
 - **One file, on your machine.** Everything is stored in a single file: `~/.kairos-journal/journal.db`. No account, no cloud, and nobody pays for storage, because it's your own disk.
 - **Any AI app can plug in.** It speaks MCP (Model Context Protocol), the standard plug for connecting tools to AI apps such as Claude Desktop, Cursor and others.

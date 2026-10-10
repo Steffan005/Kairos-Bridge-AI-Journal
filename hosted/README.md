@@ -1,6 +1,6 @@
-# Kairos private journal service — local synthetic preview
+# Kairos private journal service — development preview
 
-This adapter reuses the existing Journal engine. It adds account sign-in, OAuth consent, one SQLite journal per account, and owner controls. It is **not a deployed customer service, native iPhone app, or tested Claude OAuth integration**. It deliberately accepts only a loopback HTTP base URL and synthetic email addresses ending in `.test`.
+This adapter reuses the existing Journal engine. It adds account sign-in, OAuth consent, one SQLite journal per account, and owner controls. It is **not a deployed customer service, native iPhone app, or tested Claude OAuth integration**. The local entry point accepts only loopback HTTP. A separate, invitation-gated HTTPS staging entry point is prepared for hosting; its deployment is pending. Both use development email addresses ending in `.test`.
 
 The desktop package remains separate and retains its original install and stdio/HTTP behavior. The public Next.js App repository remains separate too. This minimal adapter UI is for acceptance work; it is not the final app design.
 
@@ -15,7 +15,7 @@ npm ci
 npm test
 ```
 
-The test starts a real HTTP server on a free loopback port. It creates two synthetic accounts through Better Auth, registers a public OAuth client, performs sign-in/consent and S256 PKCE code exchanges, then connects the actual MCP SDK. It checks tenant isolation, source/date retrieval, owner export, read-only grants, invalid tokens, scope escalation, restart, disconnection, pending-code invalidation, and journal deletion/recreation. Test databases and credentials are ephemeral and removed afterward. No external AI service is called.
+The tests start real HTTP servers on free local ports. They create two synthetic accounts through Better Auth, register a public OAuth client in the local fixture, perform sign-in/consent and S256 PKCE code exchanges, then connect the actual MCP SDK. They check tenant isolation, source/date retrieval, owner export, read-only grants, invalid tokens, scope escalation, restart, sign-out, refresh retries, disconnection, pending-code invalidation, and journal deletion/recreation. A separate staging fixture simulates the HTTPS proxy boundary and checks invitations, discovery, cookies, and registration restrictions. Test databases and credentials are ephemeral and removed afterward. No external AI service is called; the proxy fixture is not actual Render/TLS evidence.
 
 Run `npm test` from the root separately for the original local Journal regression suite.
 
@@ -23,17 +23,23 @@ Run `npm test` from the root separately for the original local Journal regressio
 
 Build with `npm run build` inside `hosted/`. Set these environment variables outside Git:
 
-- `KAIROS_PREVIEW_DATA`: an absolute path to an empty, private synthetic-data directory.
+- `KAIROS_PREVIEW_DATA`: an absolute path to a private development-data directory.
 - `KAIROS_PREVIEW_SECRET`: a cryptographically random secret of at least 32 characters. Keep it unchanged for a given data directory; it protects authentication state and stored signing keys.
 - `KAIROS_PREVIEW_URL`: optional; defaults to `http://127.0.0.1:18790`.
 
-Then run `npm start` inside `hosted/` and open that URL. Create a `.test` account, save a synthetic note, view it, download the journal, disconnect all AI access, or delete it. No Apple key is involved. Do not tunnel this preview or put real journal information into it.
+Then run `npm start` inside `hosted/` and open that URL. Create a `.test` account, save a note, view it, download the journal, disconnect all AI access, or delete it. No Apple key is involved. Keep this entry point on loopback. Synthetic notes are appropriate for acceptance tests; Steffan has separately authorized using non-sensitive Kairos build notes for our own continuity. Customer accounts, private personal records and credentials are outside this development scope.
+
+## Prepared hosting path
+
+See [STAGING.md](STAGING.md) and the proposed [Render Blueprint](../render.yaml). The separate `npm run start:staging` entry point requires a canonical HTTPS origin, persistent directory, authentication and invitation secrets, and the exact deployed source revision. It does not turn on public customer registration. Hosting, price approval and the physical iPhone OAuth flow remain pending.
 
 ## Boundaries that are implemented
 
 - The journal path is derived from the **verified account ID**, never from a journal ID, project, tool argument, or actor label. A separate file serves each account.
 - Better Auth 1.7.7 owns password hashing, sessions, OAuth client registration, consent, PKCE, signing keys, access-token expiry, and refresh-token rotation. Authentication dependencies live in their own locked package so they do not force the local MCP package from Zod 3 to Zod 4.
-- OAuth resource discovery points to the authorization server. The resource validates JWT signature, issuer, audience, expiry, required claims, active account/session/client/consent, and a durable account generation on **every request**. Generic account-token minting over HTTP is disabled. Machine/client-credentials grants and client/resource administration by ordinary accounts are disabled.
+- OAuth resource discovery points to the authorization server. The resource validates JWT signature, issuer, audience, expiry, required claims, active account/client/consent, and a durable account generation on **every request**. AI authorization is independent of the browser session after consent. Generic account-token minting over HTTP is disabled. Machine/client-credentials grants and client/resource administration by ordinary accounts are disabled.
+- Discovery requests read and write scopes; a user can grant read-only access. Access tokens last 15 minutes. Refresh tokens rotate, with a 30-second retry interval that returns the same response for a matching retry; this is not general permission to reuse old tokens.
+- Local fixtures permit dynamic client registration. Invited staging disables it and permits client metadata documents only on the exact `https://claude.ai` origin through the library's SSRF-resistant fetcher. The actual web/mobile metadata URL and interoperability remain to be observed. Consent displays the signed-in account, client ID and redirect host; a client-supplied name is not vendor verification.
 - `journal:read` is required. A grant without `journal:write` cannot discover or invoke write, pin, or unpin tools. Hosted MCP never offers filesystem export; an authenticated owner gets an actual downloadable JSON file instead.
 - Disconnection currently means **disconnect all AI access for this account**, not one selected provider. It increments the generation and removes consents, access/refresh records, and pending authorization codes. Old JWTs cannot revive after reconnection. Another account stays connected.
 - Deletion disconnects access first, then removes the account's active journal, WAL, and SHM files. A tombstone prevents automatic recreation by an AI. Only the owner can start a new empty journal; old credentials remain invalid.
@@ -45,15 +51,15 @@ Then run `npm start` inside `hosted/` and open that URL. Create a `.test` accoun
 
 - A real Claude connector completing this OAuth flow, including its published client identity/CIMD path. The standard library's SSRF-resistant CIMD fetcher is configured; the local tests exercise dynamic registration instead of fetching Anthropic metadata.
 - Setup entirely through an iPhone browser, then memory retrieval/write in a fresh Claude iPhone conversation, followed by independent verification. The earlier fixed-token mobile spike is separate evidence.
-- Permanent HTTPS hosting, persistent volumes, production secret/key operations, backups, recovery, monitoring, and load behavior. One-process SQLite is a preview architecture, not a claim of readiness for millions of users.
+- Actual HTTPS hosting/proxy behavior, persistent volume operations, production secret/key operations, backups, recovery, monitoring, and load behavior. The staging adapter is locally exercised, but not deployed. One-process SQLite is a preview architecture, not a claim of readiness for millions of users.
 - Verified customer email, account recovery, account deletion, per-provider disconnect controls, and independent review before real customer data. Email/password here is for made-up test accounts only.
 - Native iOS packaging, App Store Connect app record/signing, and TestFlight. Apple membership activation is already recorded in the product plan; it does not depend on this server.
 
 ## Revocation, retention, and integrity details
 
-The owner **Disconnect all AI access** control is the immediate invalidation path tested here. The library's standard `/oauth2/revoke` endpoint supports refresh-token revocation but explicitly rejects direct JWT access-token revocation with `unsupported_token_type`; do not represent that endpoint as an immediate journal disconnect. Library consent removal/update is also wired to invalidate this account's AI access. Signing out/expiry of the authorizing browser session can make its session-bound AI credentials unusable.
+The owner **Disconnect all AI access** control is the immediate invalidation path tested here. The library's standard `/oauth2/revoke` endpoint supports refresh-token revocation but explicitly rejects direct JWT access-token revocation with `unsupported_token_type`; do not represent that endpoint as an immediate journal disconnect. Library consent removal/update is also wired to invalidate this account's AI access. **Signing out closes the owner's browser session; it does not disconnect an approved AI.** The local test checks both continued access and offline refresh after sign-out. Browser-session expiry is tested separately. The physical Claude client still needs its own check.
 
-This local preview creates **no automatic backups**. Journal deletion removes active note data immediately; it retains the sign-in account, control tombstone/generation, and authentication metadata. Downloaded exports are outside that deletion boundary. Removing the entire preview data directory after closing the process removes its local authentication and control records too. This is not a production account-deletion policy. Hosting backups and a deletion schedule must be defined and demonstrated before customer data is accepted.
+The local preview creates **no automatic backups**. Proposed Render staging can retain deleted data in hosting disk snapshots; the staging screens and deletion response disclose this. Journal deletion removes active note data immediately; it retains the sign-in account, control tombstone/generation, and authentication metadata. Downloaded exports are outside that deletion boundary. Removing the entire development data directory after closing the process removes its local authentication and control records too. This is not a production account-deletion policy. Consistent backups, restore tests and a deletion schedule must be demonstrated before customer data is accepted.
 
 Journal verification is the existing hash-chain check. OAuth signatures authenticate credentials, not the factual truth of a note. The account generation is an access-revocation/freshness control, not a cryptographic proof of journal history. Restoring every database from an old backup can restore old state; no independent trusted-head service is implemented or claimed here.
 
@@ -67,5 +73,8 @@ Primary references checked October 10, 2026:
 - [Better Auth CIMD](https://better-auth.com/docs/plugins/cimd)
 - [Better Auth email/password](https://better-auth.com/docs/authentication/email-password)
 - [MCP authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+- [Claude connector authentication](https://claude.com/docs/connectors/building/authentication)
+- [Render web services](https://render.com/docs/web-services)
+- [Render persistent disks](https://render.com/docs/disks)
 
 Installed library types and implementations were also inspected. A generic OAuth/MCP fixture passing is not evidence of every provider's interoperability.
