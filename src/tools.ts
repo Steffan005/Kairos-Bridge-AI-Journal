@@ -74,6 +74,10 @@ function brief(e: Entry, maxText = 2000) {
 export interface ServerOptions {
   /** Actor name used when the AI does not supply one. Falls back to the client's name. */
   defaultActor?: string;
+  /** Hosted adapters cannot export to arbitrary server filesystem paths. */
+  storage?: "local" | "hosted";
+  /** Deny write tools at the protocol boundary as well as in tool discovery. */
+  readOnly?: boolean;
 }
 
 /** Build an MCP server exposing the journal tools. One Journal can back many servers. */
@@ -86,7 +90,10 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
       title: ATTRIBUTION,
       ...(src.url ? { websiteUrl: src.url } : {}),
     },
-    { instructions: INSTRUCTIONS + legalInstructions() },
+    { instructions: (opts.storage === "hosted"
+        ? INSTRUCTIONS.replace("It lives on the user's own computer and the user owns it.",
+          "It is stored in the user's private hosted account. Only this authorized user's journal is available. Exports and deletion are managed by the owner in Kairos.")
+        : INSTRUCTIONS) + (opts.readOnly ? "\nThis connection is read-only; it cannot save, pin, or unpin notes." : "") + legalInstructions() },
   );
 
   const actorFor = (given?: string): string => {
@@ -133,7 +140,7 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
     },
   );
 
-  server.registerTool(
+  const writeTool = server.registerTool(
     "journal_write",
     {
       title: "Write one entry to the user's journal",
@@ -251,7 +258,7 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
     },
   );
 
-  server.registerTool(
+  const exportTool = server.registerTool(
     "journal_export",
     {
       title: "Export the journal to a file",
@@ -276,7 +283,7 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
     },
   );
 
-  server.registerTool(
+  const pinTool = server.registerTool(
     "journal_pin",
     {
       title: "Pin an entry to every briefing",
@@ -295,7 +302,7 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
     },
   );
 
-  server.registerTool(
+  const unpinTool = server.registerTool(
     "journal_unpin",
     {
       title: "Unpin an entry",
@@ -340,6 +347,12 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
     }),
   );
 
+  if (opts.readOnly) {
+    writeTool.disable();
+    pinTool.disable();
+    unpinTool.disable();
+  }
+  if (opts.readOnly || opts.storage === "hosted") exportTool.disable();
   return server;
 }
 

@@ -13,6 +13,8 @@ Your AI reads your journal before it talks to you and writes a short note afterw
 
 ## What it does, in plain words
 
+**Hosted work in progress:** [The separate hosted adapter](hosted/README.md) is a local, synthetic-only preview with account isolation and OAuth acceptance checks. It is not a released phone connector or native iPhone app. The desktop journal described below remains available separately.
+
 - **One file, on your machine.** Everything is stored in a single file: `~/.kairos-journal/journal.db`. No account, no cloud, and nobody pays for storage, because it's your own disk.
 - **Any AI app can plug in.** It speaks MCP (Model Context Protocol), the standard plug for connecting tools to AI apps such as Claude Desktop, Cursor and others.
 - **Tamper-evident.** Every entry carries a fingerprint (a SHA-256 hash) of itself plus the entry before it, like links in a chain. If anyone edits or deletes an old entry, `verify` catches it and points to where.

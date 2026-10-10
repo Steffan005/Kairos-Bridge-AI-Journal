@@ -1,0 +1,28 @@
+{
+  "name": "kairos-journal-hosted-preview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/hosted/src/main.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/hosted/test/*.test.js"
+  },
+  "dependencies": {
+    "@better-auth/cimd": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "better-auth": "1.7.7",
+    "better-sqlite3": "12.11.1",
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "20.19.43",
+    "typescript": "5.9.3"
+  }
+}

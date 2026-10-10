@@ -45,8 +45,12 @@ export const ADDITIONAL_TERMS =
 /** Folder containing package.json, LICENSE, NOTICE and src/ (two levels above dist/src/). */
 export function packageRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  for (const candidate of [path.resolve(here, "../.."), path.resolve(here, "..")]) {
-    if (fs.existsSync(path.join(candidate, "package.json"))) return candidate;
+  // Hosted builds compile the shared engine inside a nested dist directory.
+  // Find the actual licensed package, rather than a dependency-only adapter.
+  let candidate = here;
+  for (let depth = 0; depth < 7; depth++) {
+    if (fs.existsSync(path.join(candidate, "package.json")) && fs.existsSync(path.join(candidate, "NOTICE"))) return candidate;
+    candidate = path.dirname(candidate);
   }
   return path.resolve(here, "../..");
 }
