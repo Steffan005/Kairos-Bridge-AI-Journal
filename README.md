@@ -25,13 +25,14 @@ Your AI reads your journal before it talks to you and writes a short note afterw
 |---|---|
 | `journal_wake` | At the start of a conversation. Returns a short briefing: your pinned entries (who you are, what you prefer) plus the most recent notes, capped at about 6,000 characters. |
 | `journal_write` | When it learns something you'd want remembered (a preference, a fact, a decision, a short session summary). It's told never to write secrets, and the server also refuses obvious ones (passwords, API keys, card numbers and similar). |
+| `journal_continue` | When you ask to resume a named project. Returns only entries tagged `project-<slug>`, newest first, with a hard response-size cap. |
 | `journal_search` | When you mention something from the past. Searches by word across every entry. |
 | `journal_verify` | When you ask "is my journal intact?" It re-checks every fingerprint and link. |
 | `journal_export` | When you ask for a backup. Saves JSON or Markdown in a folder you own and never overwrites an existing file. |
 | `journal_pin` / `journal_unpin` | Mark an entry to appear in every briefing, or stop showing it. Nothing gets deleted. |
 | `journal_about` | When you ask who made it, what the license is, or where the source code is. (The same information is available as the MCP resource `kairos-journal://about` and, in HTTP mode, at `GET /about`.) |
 
-Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (who wrote it, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`.
+Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (who wrote it, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`. For project notes, use a tag such as `project-kitchen`; ask `journal_continue` for `kitchen` or `project-kitchen` to retrieve that exact project tag.
 
 ---
 
@@ -211,9 +212,9 @@ Reproduce it: `npm run bench` (or `node dist/bench/storage-bench.js --entries 30
 ```
 src/
   server.ts       MCP server entry (stdio by default, --http for Streamable HTTP)
-  tools.ts        the 8 MCP tools, the about resource and the instructions the AI sees
+  tools.ts        the 9 MCP tools, the about resource and the instructions the AI sees
   about.ts        copyright, license, attribution and source location (AGPL notices)
-  journal.ts      storage: SQLite schema, hash chain, wake, search, verify, export
+  journal.ts      storage: SQLite schema, hash chain, wake, project continuation, search, verify, export
   canonical.ts    canonical serialization, SHA-256, 25 ms tick
   secrets.ts      best-effort "this looks like a secret" filter
   http.ts         Streamable HTTP transport with bearer token and Host checks

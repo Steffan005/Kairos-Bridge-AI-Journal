@@ -33,6 +33,7 @@ export const SERVER_VERSION = "0.1.0";
 
 const INSTRUCTIONS = `This server is the user's personal memory journal. It lives on the user's own computer and the user owns it.
 - At the start of a conversation, call journal_wake once and use the briefing as background about the user.
+- When the user returns to a project, call journal_continue with its project name. Tag project notes as project-<slug> when writing.
 - When you learn something the user would clearly want remembered next time (a preference, a decision, a key fact, a short summary of what you did together), call journal_write.
 - Never write secrets: no passwords, API keys, tokens, account or card numbers, ID numbers, or private health/financial details unless the user explicitly asks you to remember that specific thing.
 - Entries are permanent. To correct something, write a new entry that states the correction.
@@ -159,7 +160,7 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
           .array(z.string().max(LIMITS.tagMaxChars))
           .max(LIMITS.tagsMax)
           .optional()
-          .describe("A few short topic tags, e.g. ['travel', 'diet']."),
+          .describe("A few short topic tags, e.g. ['travel', 'diet'] or 'project-kitchen' for project notes."),
         actor: z
           .string()
           .max(LIMITS.actorMaxChars)
@@ -201,6 +202,30 @@ export function createJournalServer(journal: Journal, opts: ServerOptions = {}):
       try {
         const hits = journal.search(query, { limit, kind, actor });
         return asText({ query, count: hits.length, results: hits.map((h) => brief(h, 1000)) });
+      } catch (e) {
+        return errorResult(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "journal_continue",
+    {
+      title: "Continue a project from the journal",
+      description:
+        "Use when the user asks to resume or pick up a named project. Returns only notes tagged with the exact project tag " +
+        "project-<slug>, newest first, with the author and timestamp shown. When writing project notes, use that same tag. " +
+        "The response is capped; it reports when additional matching notes may be available.",
+      inputSchema: {
+        project: z.string().min(1).max(LIMITS.tagMaxChars).describe("Project name or tag, e.g. 'kitchen' or 'project-kitchen'."),
+        limit: z.number().int().min(1).max(LIMITS.continueMaxLimit).optional().describe("Maximum entries (default 20)."),
+        max_chars: z.number().int().min(200).max(LIMITS.continueMaxChars).optional().describe("Maximum response size in characters (default 6000)."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ project, limit, max_chars }) => {
+      try {
+        return asText(journal.continueProject(project, { limit, maxChars: max_chars }).text);
       } catch (e) {
         return errorResult(e);
       }

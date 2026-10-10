@@ -41,6 +41,8 @@ export const LIMITS = {
   tagMaxChars: 48,
   tagsMax: 16,
   searchMaxLimit: 50,
+  continueMaxLimit: 50,
+  continueMaxChars: 50_000,
   wakeMaxChars: 50_000,
   wakeMaxRecent: 200,
 } as const;
@@ -79,6 +81,20 @@ export interface WakeOptions {
   maxChars?: number;
   /** Long entries are shortened to this many characters inside the briefing. Default 600. */
   maxEntryChars?: number;
+}
+
+export interface ContinueOptions {
+  /** Maximum matching entries to include. Default 20. */
+  limit?: number;
+  /** Hard cap on the returned briefing text in characters. Default 6000. */
+  maxChars?: number;
+}
+
+export interface ContinueBriefing {
+  projectTag: string;
+  text: string;
+  included: number;
+  truncated: boolean;
 }
 
 export interface WakeBriefing {
@@ -315,6 +331,16 @@ export class Journal {
       recentUnpinned: db.prepare(
         `${SELECT_ENTRY} WHERE p.entry_id IS NULL ORDER BY e.seq DESC LIMIT ?`,
       ),
+      continueProject: db.prepare(
+        `SELECT e.*, (p.entry_id IS NOT NULL) AS pinned
+         FROM entries_fts
+         JOIN entries e ON e.seq = entries_fts.rowid
+         LEFT JOIN pins p ON p.entry_id = e.id
+         WHERE entries_fts MATCH @q
+           AND EXISTS (SELECT 1 FROM json_each(e.tags) AS tag WHERE tag.value = @tag)
+         ORDER BY e.seq DESC
+         LIMIT @limit`,
+      ),
       pinnedAll: db.prepare(
         // CROSS JOIN keeps SQLite from scanning all entries: walk the (small) pins table first.
         `SELECT e.*, 1 AS pinned FROM pins p CROSS JOIN entries e ON e.id = p.entry_id ORDER BY e.seq ASC`,
@@ -427,6 +453,68 @@ export class Journal {
 
   recent(n: number): Entry[] {
     return (this.stmts.recentUnpinned.all(n) as Row[]).map(rowToEntry);
+  }
+
+  /** Return entries tagged for one project, newest first, within a hard text cap. */
+  continueProject(project: string, opts: ContinueOptions = {}): ContinueBriefing {
+    if (typeof project !== "string" || !project.trim()) {
+      throw new JournalError("project is required");
+    }
+    // Normalize the complete tag exactly as journal_write does. This matters
+    // because tagMaxChars applies to the whole tag, including "project-".
+    const projectTag = normalizeTags([
+      project.startsWith("project-") ? project : `project-${project}`,
+    ])[0];
+    if (!projectTag || !projectTag.startsWith("project-") || projectTag.length === "project-".length) {
+      throw new JournalError("project must contain letters or numbers");
+    }
+    const terms = projectTag.match(/[\p{L}\p{N}_]+/gu);
+    if (!terms || terms.length < 2) {
+      throw new JournalError("project must contain letters or numbers");
+    }
+
+    const limit = Math.max(1, Math.min(opts.limit ?? 20, LIMITS.continueMaxLimit));
+    const maxChars = Math.max(200, Math.min(opts.maxChars ?? 6000, LIMITS.continueMaxChars));
+    const q = `tags : "${terms.join(" ")}"`;
+    const rows = this.stmts.continueProject.all({ q, tag: projectTag, limit: limit + 1 }) as Row[];
+    const hasMore = rows.length > limit;
+    const entries = rows.slice(0, limit).map(rowToEntry);
+    const header = `Project continuation for #${projectTag} (newest first):`;
+    if (entries.length === 0) {
+      return { projectTag, text: `No entries found for #${projectTag}.`, included: 0, truncated: false };
+    }
+
+    const footer = "\n[Output capped; more matching entries may be available.]";
+    let text = header;
+    let included = 0;
+    let truncated = hasMore;
+    for (const entry of entries) {
+      const date = entry.created_at.slice(0, 16).replace("T", " ") + "Z";
+      const prefix = `\n- [${date} · ${entry.actor} · ${entry.kind}] `;
+      const suffix = ` (id ${entry.id})`;
+      const body = entry.text.replace(/\s+/g, " ");
+      const available = maxChars - text.length - prefix.length - suffix.length - footer.length;
+      if (available <= 0) {
+        truncated = true;
+        break;
+      }
+      if (body.length <= available) {
+        text += prefix + body + suffix;
+        included++;
+        continue;
+      }
+      if (available >= 1) {
+        text += prefix + body.slice(0, Math.max(0, available - 1)) + "…" + suffix;
+        included++;
+      }
+      truncated = true;
+      break;
+    }
+    if (truncated) text += footer;
+    // The minimum maxChars leaves room for the header and footer; keep the
+    // externally visible guarantee exact even if those strings are revised.
+    if (text.length > maxChars) text = text.slice(0, maxChars);
+    return { projectTag, text, included, truncated };
   }
 
   search(query: string, opts: SearchOptions = {}): SearchHit[] {

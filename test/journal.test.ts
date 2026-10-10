@@ -296,6 +296,63 @@ describe("wake briefing", () => {
   });
 });
 
+describe("project continuation", () => {
+  test("returns only the exact project tag, newest first, with provenance", () => {
+    const j = Journal.open(tempDbPath());
+    const kitchenOld = j.write({
+      text: "First kitchen decision; bathroom is mentioned here only as a comparison.",
+      actor: "chatgpt",
+      kind: "decision",
+      tags: ["project-kitchen"],
+      nowMs: Date.UTC(2026, 9, 9, 10),
+    });
+    j.write({
+      text: "Bathroom notes mention the kitchen, but belong to bathroom.",
+      actor: "claude",
+      tags: ["project-bathroom"],
+      nowMs: Date.UTC(2026, 9, 9, 11),
+    });
+    const kitchenNew = j.write({
+      text: "Second kitchen decision.",
+      actor: "steffan",
+      tags: ["project-kitchen"],
+      nowMs: Date.UTC(2026, 9, 9, 12),
+    });
+
+    const result = j.continueProject("Kitchen");
+    assert.equal(result.projectTag, "project-kitchen");
+    assert.equal(result.included, 2);
+    assert.ok(result.text.indexOf(kitchenNew.id) < result.text.indexOf(kitchenOld.id));
+    assert.match(result.text, /chatgpt|steffan/);
+    assert.match(result.text, /decision/);
+    assert.doesNotMatch(result.text, /Bathroom notes/);
+    assert.equal(j.verify().ok, true);
+    j.close();
+  });
+
+  test("accepts the project tag form and applies write-time truncation to long names", () => {
+    const j = Journal.open(tempDbPath());
+    const longName = "a".repeat(48);
+    const stored = j.write({ text: "Long project decision.", tags: [`project-${longName}`] });
+    const result = j.continueProject(longName);
+    assert.equal(result.projectTag, stored.tags[0]);
+    assert.match(result.text, new RegExp(stored.id));
+    assert.match(j.continueProject(stored.tags[0]).text, new RegExp(stored.id));
+    j.close();
+  });
+
+  test("reports no matches and enforces the hard output cap", () => {
+    const j = Journal.open(tempDbPath());
+    assert.equal(j.continueProject("unknown").text, "No entries found for #project-unknown.");
+    j.write({ text: `Long note ${"useful detail ".repeat(500)}`, tags: ["project-kitchen"] });
+    const result = j.continueProject("kitchen", { maxChars: 200 });
+    assert.ok(result.text.length <= 200);
+    assert.equal(result.truncated, true);
+    assert.match(result.text, /Output capped/);
+    j.close();
+  });
+});
+
 describe("input safety", () => {
   test("refuses obvious secrets and oversize text, normalizes tags and actor", () => {
     const j = Journal.open(tempDbPath());
