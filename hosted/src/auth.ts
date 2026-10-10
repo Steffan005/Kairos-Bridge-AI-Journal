@@ -13,6 +13,10 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import type { Accounts } from "./accounts.js";
 
+// First-provider staging. Claude Code is a distinct client and is not enabled here.
+export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+export const isStagingClientAllowed = (clientId: string): boolean => clientId === CLAUDE_CONNECTOR_CLIENT_ID;
+
 export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: { staging?: boolean } = {}) {
   if (secret.length < 32) throw new Error("Provide a random authentication secret of at least 32 characters");
   const database = new Database(join(accounts.directory, "auth.db"));
@@ -40,9 +44,9 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
         customAccessTokenClaims: ({ user }) => ({ kairos_epoch: user ? accounts.get(user.id).epoch : -1 }),
       }),
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28",
-        // First-provider staging trusts metadata hosted by Anthropic, not arbitrary client URLs.
-        // Narrow to the actual document URL after the physical Claude flow identifies it.
-        isMetadataDocumentUrlAllowed: clientId => !options.staging || new URL(clientId).origin === "https://claude.ai",
+        // Exact document discovered by Grok's public GET; hosted reachability and iPhone use
+        // still require observation. The library validates metadata and redirect matching.
+        isMetadataDocumentUrlAllowed: clientId => !options.staging || isStagingClientAllowed(clientId),
       }),
     ],
   });

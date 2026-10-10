@@ -11,10 +11,13 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
 import { stagingSettings } from "../src/deployment.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
 const revision = "1".repeat(40);
 test("staging configuration rejects ambiguous or insecure deployment settings", () => {
+  assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
+  for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata"]) assert.equal(isStagingClientAllowed(clientId), false);
   const settings = { baseURL, directory: "/var/data/kairos", secret: "s".repeat(32), inviteCode: "i".repeat(32), sourceRevision: revision, port: 10000 };
   assert.equal(stagingSettings(settings).listenHost, "0.0.0.0");
   for (const baseURL of ["http://journal.example.test", "https://localhost", "https://127.0.0.1", "https://journal.local", "https://journal.internal", "https://journal.example.test/path", "https://journal.example.test?x=1", "https://user:pass@journal.example.test", "https://journal.example.test:8443"]) {

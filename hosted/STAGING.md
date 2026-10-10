@@ -34,7 +34,7 @@ Start: `npm --prefix hosted run start:staging`
 ## First connection boundary
 
 - Account creation requires the invitation and a development address ending in `.test`. There is no verified email or customer password recovery yet.
-- Public dynamic client registration is disabled. Client metadata documents are limited to the exact `https://claude.ai` origin, with the library's SSRF-resistant fetching and metadata validation. Observe the actual Claude web/mobile client document before claiming compatibility; the documented Claude Code URL does not prove the web connector's identity.
+- Public dynamic client registration is disabled. The only permitted client metadata URL is `https://claude.ai/oauth/mcp-oauth-client-metadata`, with the library's SSRF-resistant fetching and metadata validation. Grok reported a successful public GET and its documented callback `https://claude.ai/api/mcp/auth_callback`; this is research evidence, not our hosted runtime result. Claude Code is not enabled. Verify document reachability from the deployed server, including its advertised grant types, then observe the actual iPhone client's authorization before claiming compatibility. Do not replace a failed metadata fetch with a silently pinned copy or broaden registration to force a pass.
 - Discovery requests `journal:read journal:write`; users may grant read-only access. The consent screen shows the account, client ID, redirect host, permissions and cloud-provider privacy sentence.
 - Browser sign-out preserves approved AI access. Owner Disconnect invalidates all AI connections for that account. Per-provider disconnect is not implemented.
 - `/about` offers source at the exact deployed revision. Preserve AGPL and NOTICE attribution.
