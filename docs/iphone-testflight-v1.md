@@ -10,14 +10,16 @@ Claim labels used below: **[in repo, file:line]** is read from this checkout at 
 | Exists in this repo (observed) | Proposed for the iOS and hosted product (not built) |
 | --- | --- |
 | A local Node MCP server [in repo, `src/server.ts`, `package.json` v0.1.0, `"private": true`] | An iPhone app (SwiftUI, TestFlight) as the owner's control panel |
-| stdio transport [in repo, `src/server.ts:24,115`] and a local-only Streamable HTTP mode at `POST /mcp` with one shared bearer (authentication) token [in repo, `src/http.ts:40,64-83`] | A hosted remote MCP endpoint reachable by cloud AI, with per-provider OAuth 2.1 sign-in |
+| stdio transport [in repo, `src/server.ts:24,115`] and a local-only Streamable HTTP mode at `POST /mcp` with one shared bearer (authentication) token [in repo, `src/http.ts:40,64-83`] | A hosted remote MCP endpoint reachable by cloud AI, with authentication chosen per provider (section 5) |
 | One SQLite file via `better-sqlite3` [in repo, `src/journal.ts:23`] | A hosted per-user store (design open) |
-| 8 tools: `journal_wake`, `journal_write`, `journal_search`, `journal_verify`, `journal_export`, `journal_pin`, `journal_unpin`, `journal_about` [in repo, `src/tools.ts:99,135,185,210,229,254,273,291`] | Same tools plus a topic-continuation tool (below) |
+| 8 tools: `journal_wake`, `journal_write`, `journal_search`, `journal_verify`, `journal_export`, `journal_pin`, `journal_unpin`, `journal_about` [in repo, `src/tools.ts:99,135,185,210,229,254,273,291`] | The same tools; `journal_continue` already exists on a separate branch (see below) and would be carried into the hosted product |
 | Hash-chained, append-only entries; edits and deletes are refused by database triggers [in repo, `src/journal.ts:178-183`] | "Hide" behaviour for V1 (proposed); true erasure is an open decision (section 8) |
-| `journal_wake` returns pinned plus recent entries [in repo, `src/journal.ts:474`]; `journal_search` is keyword search [in repo, `src/journal.ts:432`, FTS table at `:165`] | `journal_continue(project)`: exact-tag lookup, newest first, size-capped, says so when nothing matches [proposed] |
+| `journal_wake` returns pinned plus recent entries [in repo, `src/journal.ts:474`]; `journal_search` is keyword search [in repo, `src/journal.ts:432`, FTS table at `:165`] | On `main`: no project lookup. A hosted or iPhone version of project continuation is proposed (see below) |
 | README lists limits: no OAuth, no encryption beyond disk encryption, no sync [in repo, `README.md:240-244`] | OAuth, accounts, sync, per-provider permissions and revocation, encryption design [proposed] |
 
-**Absent from the repo (verified by `git ls-files`):** any iOS or iPhone code, Xcode project or Swift; any hosted service; OAuth or accounts; sync; per-provider permissions, revocation or access history; encryption at rest; a `journal_continue` tool or any `project-` tag handling; anything verified to run on iOS (the SQLite binding is a Node native add-on). Tests exist (`test/`) but were not run for this document.
+**Project continuation exists on a separate branch, not on `main`.** The public branch `chatgpt/project-continuation` is at commit `c2ce538` ("Add exact project journal continuation"). Checked Oct 10, 2026 with `git ls-remote` and a fetch of that branch: it adds a `journal_continue` tool [in that branch, `src/tools.ts:212`], supporting code in `src/journal.ts`, a README change, and tests in `test/journal.test.ts` and `test/e2e.test.ts`. A static count of test cases on that branch is 34 (22 + 5 + 7); the branch's author reports the 34 unit and MCP end-to-end tests pass, and **this document's author did not run them**. `main` is still at `f632a7c` and does **not** contain `journal_continue`. Until that branch is merged, treat the tool as implemented on a branch only.
+
+**Absent from the repo, on `main` and on that branch as far as checked (`git ls-files`; no matching files):** any iOS or iPhone code, Xcode project or Swift; any hosted service; OAuth or accounts; sync; per-provider permissions, revocation or access history; encryption at rest; anything verified to run on iOS (the SQLite binding is a Node native add-on). The `src/` diff of the branch was not reviewed line by line for this document. Tests on `main` exist (`test/`) but were not run for this document.
 
 ## 2. The iPhone-only user's successful demo (end state) [proposed]
 
@@ -29,12 +31,12 @@ Maya has only an iPhone. She installs the TestFlight build, creates a journal, a
 flowchart LR
   P["Kairos iPhone app (owner UI)"] -->|"HTTPS, owner sign-in"| H["Hosted Kairos journal service"]
   H --- DB[("Per-user journal store")]
-  C["ChatGPT / Claude / Grok / Gemini cloud"] -->|"Remote MCP over HTTPS, OAuth 2.1"| H
+  C["ChatGPT / Claude / Grok / Gemini cloud"] -->|"Remote MCP over HTTPS, auth per provider"| H
   H -->|"access history, grants"| P
 ```
 
 - **iPhone app does:** create the journal; view entries; correct or hide; export; see each provider's access and last-read time; turn a provider off; delete the account and all data.
-- **Hosted service does:** stores the journal; acts as (or integrates with) an OAuth 2.1 authorization server; exposes the remote MCP endpoint; records which provider read or wrote what.
+- **Hosted service does:** stores the journal; provides sign-in and access control for each provider in the way that provider supports (OAuth 2.1 where the provider and client support it, per the MCP authorization spec; see section 5); exposes the remote MCP endpoint; records which provider read or wrote what.
 - **The iPhone itself cannot be the server the AI providers reach.** Evidence: Claude states remote connectors are called from Anthropic's cloud, not the device, in every client including mobile [official doc, Claude Help, checked Oct 10 2026]; Grok says a custom MCP server must be reachable over the public internet [official doc, xAI]; ChatGPT connects to remote servers and not directly to local ones [official doc, OpenAI]. iOS suspends apps shortly after they leave the foreground, so a phone-hosted server would not stay reachable [official doc, Apple, partly verified; see section 9]. No official page found says an iPhone app can act as an MCP server for other AI apps [unverified absence].
 
 ## 4. Free shared journal as the default [proposed]
@@ -47,9 +49,18 @@ flowchart LR
 
 For each of ChatGPT, Claude, Grok and Gemini, the app would show: connected or not; what it may do (read, write); when it last read or wrote; and a switch to turn it off. A separate "delete everything" removes the account and journal.
 
-How turning one off would work:
-1. **At Kairos:** revoke that provider's OAuth grant and invalidate its access and refresh credentials. The next call from that provider gets an HTTP 401 [official doc: MCP authorization says invalid or expired credentials must receive 401].
-2. **At the provider:** the user should also remove or disconnect the connector in that provider's settings. Claude lets users revoke by disconnecting the connector [official doc, Claude Help]; Gemini lets users disconnect, unlink, or remove a custom app [official doc, Google].
+**Authentication and disconnect are provider-specific.** The MCP authorization spec says OAuth 2.1 for HTTP servers, but it is optional, and the providers do not all document the same thing [official doc, MCP]. What the docs say as of Oct 10, 2026:
+
+- **ChatGPT:** authentication is OAuth or none; OAuth refresh needs `offline_access` [official doc, OpenAI]. A documented user path to disconnect a custom app: not found [unverified].
+- **Claude:** authentication is OAuth, none, or fixed request headers; the user can revoke by disconnecting the connector [official doc, Claude Help].
+- **Gemini:** a server without Dynamic Client Registration needs credentials entered manually; the user can disconnect, unlink or remove a custom app [official doc, Google]. Which sign-in standard Gemini requires beyond that: not stated [unverified].
+- **Grok:** supported authentication modes are not stated, and a documented user path to disconnect a custom connector was not found [unverified] [official doc, xAI].
+
+**Launch blockers.** Any provider whose connection path, authentication mode or disconnect path is unsupported or unknown is a blocker to launching that provider, and the product should not list it as supported until it is tested end to end. As of this document that applies to: Grok (authentication modes and disconnect unknown), ChatGPT (phone use unsupported, disconnect path unknown), Claude on iPhone (adding a connector from the app unknown), and Gemini (US, English, personal-account limits).
+
+How turning one off would work, in the provider-neutral part Kairos controls:
+1. **At Kairos:** revoke that provider's grant and invalidate its credentials, whatever form they take (OAuth tokens where OAuth is used, or the header or key otherwise). The next call from that provider is refused. Where OAuth is used, the MCP spec says invalid or expired credentials get HTTP 401 [official doc, MCP authorization].
+2. **At the provider:** the user should also remove or disconnect the connector in that provider's settings, where the provider offers it (see the list above). The path differs by provider and is unknown for some.
 3. **What revoking does not do:** it does not erase text a provider already received and may keep in a conversation or its own records. Kairos can stop future reads; it cannot recall past ones. Copy in the app must say this.
 
 ## 6. Three-minute demo script (iPhone only) [proposed]
@@ -75,7 +86,8 @@ All numbers are **proposed targets, to be confirmed**, not results.
 2. Connect success at least 80% over at least 20 attempts per provider that the docs support; failures are logged with a reason.
 3. Correct-project recall in at least 9 of 10 fresh-context runs, with zero entries from another project in any run.
 4. When nothing matches, the response says so explicitly in 10 of 10 runs; no invented context.
-5. Revocation: after turning a provider off, its next call fails with an authorization error within 60 seconds in 10 of 10 trials.
+5. Revocation, per supported provider: after turning that provider off, its next call is refused within 60 seconds in 10 of 10 trials. A provider where this cannot be tested is not launched.
+5a. Each provider listed as supported has a tested connection path, a known authentication mode and a known disconnect path; any provider missing one is marked blocked in the release notes.
 6. Hide: a hidden entry is absent from continue, search and wake results in 10 of 10 trials; the app states plainly whether hidden text is retained.
 7. Account deletion exists in the app, and a deleted account's data is no longer retrievable by any provider (verified by test).
 8. The app shows, per provider, the last access time and what category of data was read.
