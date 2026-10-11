@@ -25,7 +25,17 @@ Latest public probes: health, source and both discovery documents returned 200; 
 
 The existing signed-in Claude account added a custom connector using the staging `/mcp` address and Claude's published identity. No custom Authorization header or manually pasted API key was used. The existing synthetic journal account signed in, and consent displayed the exact Claude client identity, `claude.ai` return host, and read/write/offline permissions. The browser returned to Claude. Its interface displayed the connector as connected with all eight journal tools, each still requiring approval. An independent owner API read confirmed the same client and scopes.
 
-The successful setup used Chrome on a Mac. Safari's consent page became blank during the earlier attempt. A later fresh Safari sign-in displayed the journal, and returning to the original tab visibly displayed consent, without changing source or security settings. The initial cause remains unresolved; no stale approval was resubmitted. A physical iPhone conversation and independent phone-only onboarding have not passed at this checkpoint.
+The successful setup used Chrome on a Mac. Safari's consent page became blank during the earlier attempt. A later fresh Safari sign-in displayed the journal, and returning to the original tab visibly displayed consent, without changing source or security settings. The initial cause remains unresolved; no stale approval was resubmitted. A later Claude UI observation showed all eight tools set to Always allow; Codex did not make that change. Initial Needs approval and later Always allow are separate observations.
+
+## Physical Claude iPhone acceptance
+
+Steffan reported a new conversation in the Claude iPhone app retrieving both known kitchen notes and saving this exact third note: `Synthetic OAuth phone write-back: the countertop sample is white.` An independent authenticated owner API read confirmed ID `30b6e0034a8bbb6d`, timestamp `2026-10-11T02:17:40.406Z` (October 10, 10:17:40 PM EDT), actor `claude`, kind `note`, and tag `project-kitchen`. The seed IDs and contents also matched.
+
+After the Kairos owner signed out in Safari, Steffan opened another fresh Claude iPhone conversation and reported retrieval of that exact new note and ID, without a write. The owner journal still contains three notes. The authorizing Chrome browser was also signed out; the phone call's exact ordering relative to that Chrome sign-out was not independently observed. This does not assert that every owner session was signed out.
+
+Codex then signed into the existing synthetic owner account and clicked Disconnect all AI access in Chrome. The screen displayed no approved connections, and an independent owner API read confirmed zero connections with all three notes retained. In the next fresh Claude iPhone conversation, Steffan reported a request to reconnect and stopped there as instructed. This is a provider reconnection prompt, not a captured raw HTTP error or proof that previously copied text disappeared. Previously retrieved text can remain in Claude after journal access is revoked.
+
+This proves the reported physical iPhone read/write and fresh-chat retrieval with independently checked journal evidence. Setup was assisted on a Mac; phone-only onboarding and a second tester remain unproven.
 
 ## Limits
 
