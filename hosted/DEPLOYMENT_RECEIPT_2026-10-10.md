@@ -25,7 +25,7 @@ Latest public probes: health, source and both discovery documents returned 200; 
 
 The existing signed-in Claude account added a custom connector using the staging `/mcp` address and Claude's published identity. No custom Authorization header or manually pasted API key was used. The existing synthetic journal account signed in, and consent displayed the exact Claude client identity, `claude.ai` return host, and read/write/offline permissions. The browser returned to Claude. Its interface displayed the connector as connected with all eight journal tools, each still requiring approval. An independent owner API read confirmed the same client and scopes.
 
-The successful setup used Chrome on a Mac. Safari's consent page became blank during the earlier attempt; its cause remains unresolved. A physical iPhone conversation and independent phone-only onboarding have not passed at this checkpoint.
+The successful setup used Chrome on a Mac. Safari's consent page became blank during the earlier attempt. A later fresh Safari sign-in displayed the journal, and returning to the original tab visibly displayed consent, without changing source or security settings. The initial cause remains unresolved; no stale approval was resubmitted. A physical iPhone conversation and independent phone-only onboarding have not passed at this checkpoint.
 
 ## Limits
 
