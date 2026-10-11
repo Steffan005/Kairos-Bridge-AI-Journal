@@ -1,6 +1,6 @@
 # Kairos private journal service — development preview
 
-This adapter reuses the existing Journal engine. It adds account sign-in, OAuth consent, one SQLite journal per account, and owner controls. Invited HTTPS development staging is live, and an actual Claude iPhone conversation retrieved and wrote synthetic notes after Mac-assisted OAuth setup. Fresh-chat retrieval after owner sign-out and a reconnect request after owner Disconnect were also observed. See the [deployment receipt](DEPLOYMENT_RECEIPT_2026-10-10.md) for source revisions and evidence. This is **not a customer release or native iPhone app**. Phone-only setup remains pending. The local entry point accepts only loopback HTTP; invited staging requires HTTPS. Both accept development email addresses ending in `.test`.
+This adapter reuses the existing Journal engine. It adds account sign-in, OAuth consent, one SQLite journal per account, and owner controls. Invited HTTPS development staging is live, and an actual Claude iPhone conversation retrieved and wrote synthetic notes after Mac-assisted OAuth setup. Fresh-chat retrieval after owner sign-out and a reconnect request after owner Disconnect were also observed. See the [deployment receipt](DEPLOYMENT_RECEIPT_2026-10-10.md) for source revisions and evidence. This is **not a customer release or native iPhone app**. A later phone-created test account and reconnection of the existing Claude connector also retrieved/wrote its own separate notes. Brand-new connector creation and a second tester remain pending. The local entry point accepts only loopback HTTP; invited staging requires HTTPS. Both accept development email addresses ending in `.test`.
 
 The desktop package remains separate and retains its original install and stdio/HTTP behavior. The public Next.js App repository remains separate too. This minimal adapter UI is for acceptance work; it is not the final app design.
 
@@ -31,7 +31,7 @@ Then run `npm start` inside `hosted/` and open that URL. Create a `.test` accoun
 
 ## Prepared hosting path
 
-See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [deployment receipt](DEPLOYMENT_RECEIPT_2026-10-10.md). The separate `npm run start:staging` entry point requires a canonical HTTPS origin, persistent directory, authentication and invitation secrets, and the exact deployed source revision. It does not turn on public customer registration. The reviewed one-instance staging was approved and deployed; full phone-only onboarding and customer recovery remain pending.
+See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [deployment receipt](DEPLOYMENT_RECEIPT_2026-10-10.md). The separate `npm run start:staging` entry point requires a canonical HTTPS origin, persistent directory, authentication and invitation secrets, and the exact deployed source revision. It does not turn on public customer registration. The reviewed one-instance staging was approved and deployed; phone signup/reconnection passed; first-time connector creation, a second tester and customer recovery remain pending.
 
 ## Boundaries that are implemented
 
@@ -49,7 +49,7 @@ See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [d
 
 ## Precisely what remains unproven
 
-- Setup entirely through an iPhone browser and onboarding by an independent user. The Mac-assisted Claude OAuth/iPhone lifecycle passed; the earlier fixed-token spike is separate evidence.
+- Brand-new connector creation on an iPhone and onboarding by an independent user. Phone signup and reconnection of an existing Claude connector passed; the earlier fixed-token spike is separate evidence.
 - Hosted backup/restore, off-host retention, customer secret/key operations, monitoring, and load behavior. Actual HTTPS proxy, isolation and restart persistence passed in staging. [Controlled offline recovery](RECOVERY.md) is implemented and tested locally with synthetic data; it has not been deployed or executed against the hosted disk. One-process SQLite is a staging architecture, not a claim of readiness for millions of users.
 - Verified customer email, account recovery, account deletion, per-provider disconnect controls, and independent review before real customer data. Email/password here is for made-up test accounts only.
 - Native iOS packaging, App Store Connect app record/signing, and TestFlight. Apple membership activation is already recorded in the product plan; it does not depend on this server.
@@ -58,7 +58,7 @@ See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [d
 
 The owner **Disconnect all AI access** control is the immediate invalidation path tested here. The library's standard `/oauth2/revoke` endpoint supports refresh-token revocation but explicitly rejects direct JWT access-token revocation with `unsupported_token_type`; do not represent that endpoint as an immediate journal disconnect. Library consent removal/update is also wired to invalidate this account's AI access. **Signing out closes the owner's browser session; it does not disconnect an approved AI.** The local test checks both continued access and offline refresh after sign-out. Browser-session expiry is tested separately. A fresh physical Claude iPhone conversation also retrieved the saved note after owner sign-out; after Disconnect, another fresh conversation requested reconnection.
 
-The local preview creates **no automatic backups**. Proposed Render staging can retain deleted data in hosting disk snapshots; the staging screens and deletion response disclose this. Journal deletion removes active note data immediately; it retains the sign-in account, control tombstone/generation, and authentication metadata. Downloaded exports are outside that deletion boundary. Removing the entire development data directory after closing the process removes its local authentication and control records too. This is not a production account-deletion policy. Consistent backups, restore tests and a deletion schedule must be demonstrated before customer data is accepted.
+The local preview creates **no automatic backups**. Render staging can retain deleted data in hosting disk snapshots; the staging screens and deletion response disclose this. Journal deletion removes active note data immediately; it retains the sign-in account, control tombstone/generation, and authentication metadata. Downloaded exports are outside that deletion boundary. Removing the entire development data directory after closing the process removes its local authentication and control records too. This is not a production account-deletion policy. Consistent backups, restore tests and a deletion schedule must be demonstrated before customer data is accepted.
 
 Journal verification is the existing hash-chain check. OAuth signatures authenticate credentials, not the factual truth of a note. The account generation is an access-revocation control, not a cryptographic proof of journal history. The new local [controlled restore utility](RECOVERY.md) removes restored authorization and signing keys and requires an operator-trusted deletion witness outside the backup. That witness is not maintained automatically. Restoring every database behind the application's back can still restore old state; no independent trusted-head service or automatic rollback detector is implemented or claimed here.
 
@@ -77,3 +77,10 @@ Primary references checked October 10, 2026:
 - [Render persistent disks](https://render.com/docs/disks)
 
 Installed library types and implementations were also inspected. A generic OAuth/MCP fixture passing is not evidence of every provider's interoperability.
+
+
+## Guided Claude setup
+
+Invited staging offers **Connect Claude** using Anthropic's [documented prefilled install link](https://claude.com/docs/connectors/building/directory-vs-custom). Only the display name and service address enter that link. It prepares a form; it does not add a connector or grant access automatically. The owner still checks the Kairos account and grants permission, then enables the connector in a fresh Claude conversation.
+
+When Kairos already records a Claude grant, the button opens Claude's existing connections instead. Kairos cannot observe whether tools are enabled in the current chat. If Claude says the server is already added, the page explains how to use its existing connector and reconnect if requested; the label can still contain “test.” Account journals remain separate. Revoking a previous account's approval still requires Disconnect in that account. Actual phone prefill/first-time creation remains to be tested; this UI is not a one-tap-install claim.

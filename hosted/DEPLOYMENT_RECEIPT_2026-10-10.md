@@ -40,3 +40,16 @@ This proves the reported physical iPhone read/write and fresh-chat retrieval wit
 ## Limits
 
 This is invited development staging. It is not customer launch, a native iPhone app, or production-scale evidence. Customer account recovery, account deletion, retention policy, consistent backup/restore, and restoration that cannot revive revoked access remain pending. A hash or signature does not establish freshness or factual truth. No passwords, invitation secrets, cookies, tokens, IP addresses, or signed OAuth query parameters are included in this receipt.
+
+
+## Phone-created account and existing connector reconnection
+
+Steffan subsequently followed the private test instructions entirely on his iPhone, created a distinct invited Kairos account and saved `Synthetic phone-only signup: the kitchen cabinet handles are brass.` Add connector reported “already added.” The first Claude chat had no active Kairos tools and did not read or write. Reconnecting the existing **Kairos journal test** from the phone then retrieved that new account's note and wrote `Synthetic phone-only AI write-back: the kitchen sink is stainless steel.`
+
+Authenticated owner API reads independently confirmed exactly two records, newest first: `beceafa7937c91a6`, actor claude, `2026-10-11T02:59:50.817Z`; and `1d136df2b6f1b0ba`, actor you, `2026-10-11T02:52:34.776Z`. Both are project-kitchen notes. The new account has Claude's published client with read/write/offline access. The earlier account still has its three separate notes and zero approved AI connections. Reusing the provider configuration did not combine journals.
+
+This proves phone signup and reconnection with independently checked mobile retrieval/write. It does not prove brand-new Claude connector creation, the install link's phone behavior, or setup by a second person. The provider label still says test. The exact reason Claude rejected duplicate creation was not inspected.
+
+## Source published after the running deployment
+
+Controlled offline recovery at `9dc559969a44e44d9fab4b9cfb8521e7f7a4dda7` passed 35 hosted and 34 desktop checks, locally and in [CI 38106850761](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38106850761). See [operator procedure](RECOVERY.md). It restores into a new directory, requires a separate operator-selected deletion witness and fresh authorization, and refuses old signing-key credentials. No hosted restore, automated deletion witness, encrypted off-host destination or customer account recovery was executed. The deployed source above is distinct from this newly published implementation.
