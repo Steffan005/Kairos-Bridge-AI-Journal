@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/hosted/src/main.js",
     "start:staging": "node dist/hosted/src/staging-main.js",
+    "recovery": "node dist/hosted/src/recovery-main.js",
     "test": "npm run build && node --test --test-concurrency=1 dist/hosted/test/*.test.js"
   },
   "dependencies": {

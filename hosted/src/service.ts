@@ -14,6 +14,7 @@ import { ATTRIBUTION, COPYRIGHT, LICENSE_SPDX, LICENSE_URL } from "../../src/abo
 import { Accounts } from "./accounts.js";
 import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
+import { acquireDataLease } from "./dataLease.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
@@ -51,9 +52,20 @@ async function createService(options: ServiceSettings) {
   const backupNotice = staging
     ? "Hosting disk snapshots may retain deleted data; invited development staging"
     : "No automatic backups in this preview";
-  const accounts = new Accounts(options.directory);
-  const { auth, database } = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge });
-  await migrateAuth(auth, database);
+  const releaseLease = acquireDataLease(options.directory);
+  let accounts: Accounts;
+  try { accounts = new Accounts(options.directory); }
+  catch (error) { releaseLease(); throw error; }
+  let initialized: ReturnType<typeof makeAuth>;
+  try { initialized = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge }); }
+  catch (error) { accounts.close(); releaseLease(); throw error; }
+  const { auth, database } = initialized;
+  try {
+    await migrateAuth(auth, database);
+    // Plugin initialization may still query SQLite; finish it before returning a
+    // service that callers are allowed to close immediately.
+    await auth.$context;
+  } catch (error) { database.close(); accounts.close(); releaseLease(); throw error; }
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
   const owner = async (req: http.IncomingMessage) => {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
@@ -200,6 +212,6 @@ async function createService(options: ServiceSettings) {
   return {
     server, auth, accounts,
     listen: () => new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.listenPort, options.listenHost, () => { server.off("error", reject); resolve(); }); }),
-    close: async () => { if (server.listening) await new Promise<void>((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeIdleConnections(); }); database.close(); accounts.close(); },
+    close: async () => { if (server.listening) await new Promise<void>((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeIdleConnections(); }); database.close(); accounts.close(); releaseLease(); },
   };
 }

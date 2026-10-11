@@ -318,6 +318,16 @@ export class Journal {
     return new Journal(dbPath, db);
   }
 
+  /** Verify a backup without creating a file, changing its schema, or enabling WAL. */
+  static openReadOnly(dbPath: string): Journal {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+      if (version?.value !== String(SCHEMA_VERSION)) throw new JournalError("Unsupported journal schema; an explicit migration is required");
+      return new Journal(dbPath, db);
+    } catch (error) { db.close(); throw error; }
+  }
+
   private prepare() {
     const db = this.db;
     return {

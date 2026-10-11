@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 
-export type Account = { user_id: string; epoch: number; deleted: number };
+export type Account = { user_id: string; epoch: number; deleted: number; journal_generation: number };
 
 /** A journal path and generation are controlled by verified account identity only. */
 export class Accounts {
@@ -19,6 +19,11 @@ export class Accounts {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = FULL");
     this.db.exec("CREATE TABLE IF NOT EXISTS accounts (user_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL DEFAULT 1, deleted INTEGER NOT NULL DEFAULT 0)");
+    // A separate generation distinguishes journal deletion/recreation from AI disconnect.
+    // The migration preserves existing notes and access generations.
+    if (!(this.db.pragma("table_info(accounts)") as Array<{ name: string }>).some(c => c.name === "journal_generation")) {
+      this.db.exec("ALTER TABLE accounts ADD COLUMN journal_generation INTEGER NOT NULL DEFAULT 1");
+    }
     chmodSync(join(directory, "control.db"), 0o600);
   }
   get(userId: string): Account {
@@ -34,12 +39,12 @@ export class Accounts {
   }
   delete(userId: string): void {
     this.invalidate(userId); // Fail closed even if removing the file fails.
-    this.db.prepare("UPDATE accounts SET deleted = 1 WHERE user_id = ?").run(userId);
+    this.db.prepare("UPDATE accounts SET deleted = 1, journal_generation = journal_generation + 1 WHERE user_id = ?").run(userId);
     for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(this.path(userId) + suffix, { force: true });
   }
   recreate(userId: string): void {
     if (!this.get(userId).deleted) throw new Error("The journal already exists");
-    this.db.prepare("UPDATE accounts SET deleted = 0, epoch = epoch + 1 WHERE user_id = ?").run(userId);
+    this.db.prepare("UPDATE accounts SET deleted = 0, epoch = epoch + 1, journal_generation = journal_generation + 1 WHERE user_id = ?").run(userId);
   }
   /** Deletion, disconnection, and requests to the same journal cannot overtake each other. */
   async locked<T>(userId: string, fn: () => Promise<T>): Promise<T> {
