@@ -50,7 +50,7 @@ See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [d
 ## Precisely what remains unproven
 
 - Brand-new connector creation on an iPhone and onboarding by an independent user. Phone signup and reconnection of an existing Claude connector passed; the earlier fixed-token spike is separate evidence.
-- Hosted backup/restore, off-host retention, customer secret/key operations, monitoring, and load behavior. Actual HTTPS proxy, isolation and restart persistence passed in staging. [Controlled offline recovery](RECOVERY.md) is implemented and tested locally with synthetic data; it has not been deployed or executed against the hosted disk. One-process SQLite is a staging architecture, not a claim of readiness for millions of users.
+- Hosted backup/restore, off-host retention, customer secret/key operations, monitoring, and load behavior. Actual HTTPS proxy, isolation and restart persistence passed in staging. [Controlled offline recovery](RECOVERY.md) is implemented and tested locally with synthetic data; it is included in the deployed guided-update source, but has not been executed against the hosted disk. One-process SQLite is a staging architecture, not a claim of readiness for millions of users.
 - Verified customer email, account recovery, account deletion, per-provider disconnect controls, and independent review before real customer data. Email/password here is for made-up test accounts only.
 - Native iOS packaging, App Store Connect app record/signing, and TestFlight. Apple membership activation is already recorded in the product plan; it does not depend on this server.
 

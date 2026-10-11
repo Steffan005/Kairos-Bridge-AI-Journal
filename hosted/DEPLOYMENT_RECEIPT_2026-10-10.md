@@ -8,10 +8,10 @@ Actor: ChatGPT / `gpt_codex` · scope: `kairos_bridge`
 
 - Origin: https://kairos-journal-staging.onrender.com
 - First source: `84969ba1c565f3a7c21deac7afb5468abecdc863`.
-- Current executable source: `a421bb0eceb8e65a623d9ae43e0ecdddf0da28e9`, live at 9:50:40 PM EDT.
+- Current executable source: `d59e8392ed1cd0be570143242419c735078fee15`, live at 11:17:36 PM EDT. The earlier proxy correction a421bb0 went live at 9:50:40 PM EDT.
 - Owner approved one $7 compute instance and a $0.25/month 1 GB disk: $7.25/month base before tax or additional usage.
 - Blueprint auto-sync and service automatic deployment are off. No additional paid resources were created.
-- Root regression: 34 passed. Hosted regression: 21 passed. [Exact-source CI](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38102827556) completed successfully.
+- Current root regression: 34 passed. Current hosted regression: 39 passed. [Exact-source CI](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38107574582) completed successfully. The original a421bb0 deployment passed 34 root and 21 hosted checks.
 
 ## Executed HTTPS acceptance
 
@@ -39,7 +39,7 @@ This proves the reported physical iPhone read/write and fresh-chat retrieval wit
 
 ## Limits
 
-This is invited development staging. It is not customer launch, a native iPhone app, or production-scale evidence. Customer account recovery, account deletion, retention policy, consistent backup/restore, and restoration that cannot revive revoked access remain pending. A hash or signature does not establish freshness or factual truth. No passwords, invitation secrets, cookies, tokens, IP addresses, or signed OAuth query parameters are included in this receipt.
+This is invited development staging. It is not customer launch, a native iPhone app, or production-scale evidence. Customer account recovery, account deletion, retention policy and executed hosted backup/restore remain pending. Controlled offline recovery and refusal of old credentials have passed locally, as recorded below. A hash or signature does not establish freshness or factual truth. No passwords, invitation secrets, cookies, tokens, IP addresses, or signed OAuth query parameters are included in this receipt.
 
 
 ## Phone-created account and existing connector reconnection
@@ -50,6 +50,13 @@ Authenticated owner API reads independently confirmed exactly two records, newes
 
 This proves phone signup and reconnection with independently checked mobile retrieval/write. It does not prove brand-new Claude connector creation, the install link's phone behavior, or setup by a second person. The provider label still says test. The exact reason Claude rejected duplicate creation was not inspected.
 
-## Source published after the running deployment
+## Controlled recovery introduced before the guided update
 
-Controlled offline recovery at `9dc559969a44e44d9fab4b9cfb8521e7f7a4dda7` passed 35 hosted and 34 desktop checks, locally and in [CI 38106850761](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38106850761). See [operator procedure](RECOVERY.md). It restores into a new directory, requires a separate operator-selected deletion witness and fresh authorization, and refuses old signing-key credentials. No hosted restore, automated deletion witness, encrypted off-host destination or customer account recovery was executed. The deployed source above is distinct from this newly published implementation.
+Controlled offline recovery at `9dc559969a44e44d9fab4b9cfb8521e7f7a4dda7` passed 35 hosted and 34 desktop checks, locally and in [CI 38106850761](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38106850761). See [operator procedure](RECOVERY.md). It restores into a new directory, requires a separate operator-selected deletion witness and fresh authorization, and refuses old signing-key credentials. No hosted restore, automated deletion witness, encrypted off-host destination or customer account recovery was executed. The current deployed revision includes this implementation; deployment does not prove an executed hosted restore.
+
+
+## Guided setup update — 11:17:36 PM EDT
+
+Exact tested revision d59e8392ed1cd0be570143242419c735078fee15 was manually deployed to the existing instance and disk as Render deploy dep-db5fu7o473hc73b13h80. It adds a Connect Claude link, approved-access guidance and help for the already-added case. The link contains only the service address and display name, prepares the provider's form and does not grant access. Kairos approval is explicitly distinguished from enabling tools in the current Claude chat. A synthetic local browser fixture at width 390 had no horizontal overflow.
+
+After the update, public health/source/discovery returned 200 and unauthenticated MCP returned 401 with its metadata challenge. Existing owner sessions still worked. Independent owner API checks confirmed the new phone account retained both notes and its Claude grant, while the earlier account retained all three notes and zero grants. A fresh physical phone MCP read after this update is requested and pending. No additional paid resource, customer signup permission or AI provider was added. The offline recovery code is included but was not run against the hosted disk.
