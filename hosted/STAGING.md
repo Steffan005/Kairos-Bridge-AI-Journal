@@ -1,4 +1,4 @@
-# Invited Kairos staging — prepared, not deployed
+# Invited Kairos staging — live development service
 
 **Date:** October 10, 2026
 
@@ -6,11 +6,21 @@
 
 **Purpose:** Give the first Claude iPhone OAuth check a stable HTTPS address and persistent journal. This is development staging, not the customer launch.
 
-## Proposed service
+## Observed deployment, October 10, 2026
 
-[render.yaml](../render.yaml) proposes one Render Node web service on the `chatgpt/private-journal-service` branch, with one 1 GB persistent disk at `/var/data`. Automatic deployments are off. The paid compute plan is `0.5c-512mb`; confirm the actual recurring compute/disk price and approve it in Render before creating resources. No account, service, disk or billing commitment has been created by this file.
+The invited service is live at **https://kairos-journal-staging.onrender.com**. Its first deployed source was `84969ba1c565f3a7c21deac7afb5468abecdc863`. The owner approved the final Render review of **$7.25/month base** ($7 compute plus a 1 GB disk at $0.25), before taxes or additional usage. Both Blueprint automatic sync and service automatic deployment are off. Read `/about` for the exact source of the running version.
+
+Actual HTTPS acceptance passed for two disposable accounts: isolated journals, owner-only export, read-only AI access, live Claude client-metadata fetch, consent and PKCE token exchange, a new official MCP SDK client recovering a saved note, persistence across a Render service restart, browser sign-out preserving approved AI access, token refresh, immediate owner Disconnect, and deletion of a disposable active journal. This test did not visit Claude's callback or use its mobile app. The physical iPhone OAuth flow remains pending.
+
+The initial host emitted a rate-limit warning because the default forwarded-IP parser rejected Render's proxy chain. The Render entry point now explicitly selects the single Cloudflare address header, with a local proxy regression test. This fix requires a fresh deployed test demonstrating that the edge overwrites forged client headers; local fixture success alone does not establish that.
+
+## Service configuration
+
+[render.yaml](../render.yaml) defines the one Render Node web service on the `chatgpt/private-journal-service` branch, with one 1 GB persistent disk at `/var/data`. Automatic deployments are off. The paid compute plan is `0.5c-512mb`. The approved service and disk have been created; do not add resources or change their paid sizing without owner authorization.
 
 The built adapter listens on `0.0.0.0:$PORT` behind Render's HTTPS edge. The public port must never be exposed directly. Outside `/healthz`, it requires the exact canonical Host and `X-Forwarded-Proto: https`; it does not derive its issuer or redirect URL from an untrusted forwarded host. `/healthz` returns mode and a minimal process-liveness response, without notes or account data; it is not a database recovery check.
+
+When `RENDER=true`, the staging entry point configures Better Auth with only `cf-connecting-ip` for client-address tracking. Generic staging and local preview retain the library's conservative default. Missing/invalid headers retain the shared-bucket fallback; rate limiting, TLS, Host and Origin checks remain enabled. This trust depends on the origin being reachable through Render's edge, which [Render documents as passing through Cloudflare](https://render.com/articles/how-render-handles-ddos-attacks). [Cloudflare documents its single-address header](https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip), and [Better Auth documents why an appending forwarded chain is unsafe to trust by default](https://better-auth.com/docs/concepts/rate-limit).
 
 Use one writer/instance. Do not add replicas or run another process against these databases. Disk-backed deployment can briefly stop the service while changing builds. This is a pilot architecture, not a scale claim.
 
@@ -34,7 +44,7 @@ Start: `npm --prefix hosted run start:staging`
 ## First connection boundary
 
 - Account creation requires the invitation and a development address ending in `.test`. There is no verified email or customer password recovery yet.
-- Public dynamic client registration is disabled. The only permitted client metadata URL is `https://claude.ai/oauth/mcp-oauth-client-metadata`, with the library's SSRF-resistant fetching and metadata validation. Grok reported a successful public GET and its documented callback `https://claude.ai/api/mcp/auth_callback`; this is research evidence, not our hosted runtime result. Claude Code is not enabled. Verify document reachability from the deployed server, including its advertised grant types, then observe the actual iPhone client's authorization before claiming compatibility. Do not replace a failed metadata fetch with a silently pinned copy or broaden registration to force a pass.
+- Public dynamic client registration is disabled. The only permitted client metadata URL is `https://claude.ai/oauth/mcp-oauth-client-metadata`, with the library's SSRF-resistant fetching and metadata validation. The actual host fetched it and completed synthetic consent/PKCE acceptance using its declared callback `https://claude.ai/api/mcp/auth_callback`; the fixture never visited that callback. Claude Code is not enabled. Observe the actual iPhone client's authorization before claiming compatibility. Do not replace a failed metadata fetch with a silently pinned copy or broaden registration to force a pass.
 - Discovery requests `journal:read journal:write`; users may grant read-only access. The consent screen shows the account, client ID, redirect host, permissions and cloud-provider privacy sentence.
 - Browser sign-out preserves approved AI access. Owner Disconnect invalidates all AI connections for that account. Per-provider disconnect is not implemented.
 - `/about` offers source at the exact deployed revision. Preserve AGPL and NOTICE attribution.

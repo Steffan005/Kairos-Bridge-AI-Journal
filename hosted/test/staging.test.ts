@@ -20,6 +20,9 @@ test("staging configuration rejects ambiguous or insecure deployment settings", 
   for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata"]) assert.equal(isStagingClientAllowed(clientId), false);
   const settings = { baseURL, directory: "/var/data/kairos", secret: "s".repeat(32), inviteCode: "i".repeat(32), sourceRevision: revision, port: 10000 };
   assert.equal(stagingSettings(settings).listenHost, "0.0.0.0");
+  assert.equal(stagingSettings(settings).trustedEdge, undefined);
+  assert.equal(stagingSettings({ ...settings, trustedEdge: "render-cloudflare" }).trustedEdge, "render-cloudflare");
+  assert.throws(() => stagingSettings({ ...settings, trustedEdge: "untrusted" as never }));
   for (const baseURL of ["http://journal.example.test", "https://localhost", "https://127.0.0.1", "https://journal.local", "https://journal.internal", "https://journal.example.test/path", "https://journal.example.test?x=1", "https://user:pass@journal.example.test", "https://journal.example.test:8443"]) {
     assert.throws(() => stagingSettings({ ...settings, baseURL }));
   }
@@ -32,11 +35,11 @@ test("invited staging: proxy boundary, HTTPS metadata, signup gate and durable o
   const socket = net.createServer(); await new Promise<void>(r => socket.listen(0, "127.0.0.1", r));
   const port = (socket.address() as net.AddressInfo).port; await new Promise<void>(r => socket.close(() => r()));
   const wire = `http://127.0.0.1:${port}`;
-  const options = { baseURL, directory, port, secret: randomBytes(32).toString("hex"), inviteCode: randomBytes(32).toString("hex"), sourceRevision: revision };
+  const options = { baseURL, directory, port, secret: randomBytes(32).toString("hex"), inviteCode: randomBytes(32).toString("hex"), sourceRevision: revision, trustedEdge: "render-cloudflare" as const };
   let staging = await createStaging(options); await staging.listen();
   // Node's fetch intentionally ignores a custom Host header; a proxy fixture must preserve it.
   const request = (path: string, opts: RequestInit = {}): Promise<Response> => new Promise((resolve, reject) => {
-    const headers = new Headers({ host: "journal.example.test", "x-forwarded-proto": "https", connection: "close", ...opts.headers });
+    const headers = new Headers({ host: "journal.example.test", "x-forwarded-proto": "https", "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.66, 10.0.0.1", connection: "close", ...opts.headers });
     const req = http.request(wire + path, { method: opts.method ?? "GET", headers: Object.fromEntries(headers) }, res => {
       const chunks: Buffer[] = []; res.on("data", chunk => chunks.push(Buffer.from(chunk)));
       res.on("end", () => {
@@ -85,6 +88,14 @@ test("invited staging: proxy boundary, HTTPS metadata, signup gate and durable o
       const denied = await request("/api/auth/oauth2/authorize?" + target, { headers: { cookie, accept: "application/json" } }); assert.ok(denied.status >= 400);
       const { adapter } = await staging.auth.$context;
       assert.equal((await adapter.findMany({ model: "oauthClient" })).length, 0);
+    });
+    await t.test("declared Render edge uses the single Cloudflare address, not the forwarded chain", async () => {
+      assert.deepEqual(staging.auth.options.advanced?.ipAddress?.ipAddressHeaders, ["cf-connecting-ip"]);
+      const session = await (await request("/api/auth/get-session", { headers: { cookie } })).json();
+      assert.equal(session.session.ipAddress, "203.0.113.7");
+      assert.notEqual(session.session.ipAddress, "198.51.100.66");
+      // Local proxy fixture only: the real host must separately prove this header
+      // is overwritten at the edge even when a client supplies a forged value.
     });
     await t.test("owner write, restart, export and active deletion preserve the declared boundaries", async () => {
       const saved = await request("/api/journal/notes", { method: "POST", headers: { cookie, origin: baseURL, "content-type": "application/json" }, body: JSON.stringify({ text: "SYNTHETIC: persistent staging note", tags: ["project-staging"] }) }); assert.equal(saved.status, 201);

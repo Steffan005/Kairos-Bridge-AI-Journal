@@ -17,7 +17,7 @@ import type { Accounts } from "./accounts.js";
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 export const isStagingClientAllowed = (clientId: string): boolean => clientId === CLAUDE_CONNECTOR_CLIENT_ID;
 
-export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: { staging?: boolean } = {}) {
+export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: { staging?: boolean; trustedEdge?: "render-cloudflare" } = {}) {
   if (secret.length < 32) throw new Error("Provide a random authentication secret of at least 32 characters");
   const database = new Database(join(accounts.directory, "auth.db"));
   database.pragma("journal_mode = WAL");
@@ -29,6 +29,14 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
     disabledPaths: ["/token"], // Never expose a generic account JWT as a journal credential.
     emailAndPassword: { enabled: true, minPasswordLength: 12 },
     session: { cookieCache: { enabled: false } },
+    // Render's public edge routes through Cloudflare. Use its single overwritten
+    // address, never an untrusted leftmost X-Forwarded-For value. This option is
+    // selected only by the Render staging entry point; generic/local hosts keep
+    // Better Auth's conservative defaults. Missing/invalid headers fail to the
+    // library's shared bucket; rate limiting is never disabled.
+    ...(options.trustedEdge === "render-cloudflare"
+      ? { advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } } }
+      : {}),
     plugins: [
       jwt({ jwt: { issuer: `${baseURL}/api/auth` } }),
       oauthProvider({

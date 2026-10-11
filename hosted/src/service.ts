@@ -52,7 +52,7 @@ async function createService(options: ServiceSettings) {
     ? "Hosting disk snapshots may retain deleted data; invited development staging"
     : "No automatic backups in this preview";
   const accounts = new Accounts(options.directory);
-  const { auth, database } = makeAuth(baseURL, options.secret, accounts, { staging });
+  const { auth, database } = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge });
   await migrateAuth(auth, database);
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
   const owner = async (req: http.IncomingMessage) => {
