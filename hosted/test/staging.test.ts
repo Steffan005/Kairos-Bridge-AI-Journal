@@ -11,17 +11,21 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
 import { stagingSettings } from "../src/deployment.js";
-import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
 const revision = "1".repeat(40);
 test("staging configuration rejects ambiguous or insecure deployment settings", () => {
   assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
   assert.equal(isStagingClientAllowed(CHATGPT_CONNECTOR_CLIENT_ID), true);
+  assert.equal(isStagingClientAllowed(GROK_CONNECTOR_CLIENT_ID), true);
   for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata",
     CHATGPT_CONNECTOR_CLIENT_ID + "?copy=1", CHATGPT_CONNECTOR_CLIENT_ID + "#copy", CHATGPT_CONNECTOR_CLIENT_ID + "/",
     "https://chatgpt.com.evil.example/oauth/client.json", "https://user@chatgpt.com/oauth/client.json", "http://chatgpt.com/oauth/client.json",
-    "https://chatgpt.com/oauth/client/other-callback.json", "https://chatgpt.com/oauth/jwks.json"]) assert.equal(isStagingClientAllowed(clientId), false);
+    "https://chatgpt.com/oauth/client/other-callback.json", "https://chatgpt.com/oauth/jwks.json",
+    GROK_CONNECTOR_CLIENT_ID + "?copy=1", GROK_CONNECTOR_CLIENT_ID + "#copy", GROK_CONNECTOR_CLIENT_ID + "/",
+    "https://grok.com.evil.example/oauth/mcp-client.json", "https://user@grok.com/oauth/mcp-client.json", "http://grok.com/oauth/mcp-client.json",
+    "https://grok.com:443/oauth/mcp-client.json", "https://console.x.ai/oauth/mcp-client.json"]) assert.equal(isStagingClientAllowed(clientId), false);
   const settings = { baseURL, directory: "/var/data/kairos", secret: "s".repeat(32), inviteCode: "i".repeat(32), sourceRevision: revision, port: 10000 };
   assert.equal(stagingSettings(settings).listenHost, "0.0.0.0");
   assert.equal(stagingSettings(settings).trustedEdge, undefined);

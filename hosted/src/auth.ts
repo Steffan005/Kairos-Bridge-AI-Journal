@@ -17,8 +17,9 @@ import type { Accounts } from "./accounts.js";
 // identities are distinct clients and are not enabled by this staging allow-list.
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 export const CHATGPT_CONNECTOR_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
+export const GROK_CONNECTOR_CLIENT_ID = "https://grok.com/oauth/mcp-client.json";
 export const isStagingClientAllowed = (clientId: string): boolean =>
-  clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID;
+  clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID || clientId === GROK_CONNECTOR_CLIENT_ID;
 
 export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: {
   staging?: boolean; trustedEdge?: "render-cloudflare";

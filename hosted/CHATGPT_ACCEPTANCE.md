@@ -44,6 +44,15 @@ operator report rather than a captured raw ChatGPT tool trace.
 - The owner API confirmed consent for the exact ChatGPT client identity with
   journal read/write scopes. The phone-owner journal contained 12 notes at this
   observation; earlier notes were preserved.
+- Another new ChatGPT web conversation recovered the write without saving or
+  reconnecting. The owner confirmed it appeared in the native TestFlight app.
+- Kairos tools became available in the Codex task. Actual read/write and readback
+  matched the same owner journal. After native owner sign-out, an actual Codex
+  read still returned the saved kitchen note.
+- After native owner Disconnect, an actual Codex call was refused with
+  `UNAUTHORIZED` / `oauth_token_invalid_grant`. No reconnection was triggered.
+  Independent owner reads and hash-chain recomputation confirmed all 18 records
+  remained and no AI connections were approved.
 
 The initial approval selected an older synthetic account because Chrome reused
 its Kairos login. No notes crossed accounts. The owner explicitly selected the
@@ -62,15 +71,15 @@ a clear way to choose another Kairos account at consent.
 4. Fresh actual ChatGPT conversation retrieves a known saved project note with
    exact text, timestamp, actor and ID; writes an explicitly requested synthetic
    note; independently confirm it via the journal owner's API.
-5. **Pending:** confirm the new ChatGPT write in the native iPhone journal and
-   retrieve it in another fresh ChatGPT conversation. Check that owner sign-out
-   preserves approved ChatGPT access, while Disconnect stops it and preserves
-   all notes. Local signed-client fixtures cover these controls; they do not
-   substitute for the remaining actual ChatGPT checks.
+5. Repeat the completed owner controls when changing the release: native display,
+   another fresh retrieval, sign-out preserving approved access, and Disconnect
+   refusing actual calls while preserving notes. The observed post-sign-out and
+   post-Disconnect calls were made through the actual Codex Kairos connector.
 
 ChatGPT iPhone app use is untested. Do not infer mobile support from the successful
 web conversations. This is a private development plugin, not a published plugin
 or customer release.
 
-Gemini, Grok and Codex runtime tool availability remain separate acceptance gates.
+Gemini and Grok remain separate actual-provider acceptance gates. Direct Codex
+tools passed in the observed task; a second user's Codex setup is not established.
 Actor labels on entries remain client-supplied attribution, not vendor attestation.

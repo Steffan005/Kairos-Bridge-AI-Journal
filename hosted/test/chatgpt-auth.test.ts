@@ -73,7 +73,12 @@ test("ChatGPT-shaped CIMD: exact callback, signed client exchange, PKCE and owne
       const client = await adapter.findOne<{ tokenEndpointAuthMethod: string }>({ model: "oauthClient", where: [{ field: "clientId", value: clientId }] });
       assert.equal(client?.tokenEndpointAuthMethod, "private_key_jwt");
       const wrongCallback = await pending(callback + "/other");
-      assert.ok(wrongCallback.r.status >= 400 || !wrongCallback.r.headers.get("location")?.includes("/consent"));
+      assert.equal(wrongCallback.r.status, 302);
+      const refusal = new URL(wrongCallback.r.headers.get("location")!, baseURL);
+      assert.equal(refusal.origin, baseURL, "unregistered callbacks only reach our own error page");
+      assert.equal(refusal.pathname, "/api/auth/error");
+      assert.equal(refusal.searchParams.get("error"), "invalid_redirect");
+      assert.equal(refusal.searchParams.get("code"), null);
     });
     await t.test("unsigned and wrong-PKCE exchanges cannot mint journal access", async () => {
       const unsigned = await approve();
