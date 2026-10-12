@@ -2,13 +2,13 @@
 // Copyright (C) 2026  Steffan Douglas Haskins
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import http from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { oauthProviderAuthServerMetadata, verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { fromNodeHeaders } from "better-auth/node";
-import { Journal, JournalError } from "../../src/journal.js";
+import { Journal, JournalError, type OwnerSearchCursor, type OwnerSearchMode } from "../../src/journal.js";
 import { createJournalServer } from "../../src/tools.js";
 import { ATTRIBUTION, COPYRIGHT, LICENSE_SPDX, LICENSE_URL } from "../../src/about.js";
 import { Accounts } from "./accounts.js";
@@ -30,6 +30,29 @@ async function body(req: http.IncomingMessage): Promise<Buffer> {
 }
 function json(res: http.ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(value));
+}
+
+// The wire cursor contains no query text. Its MAC binds continuation state to
+// the authenticated owner without adding keys or mutable journal metadata.
+function cursorSignature(payload: string, userId: string, secret: string): Buffer {
+  return createHmac("sha256", secret).update(JSON.stringify(["kairos-owner-search-v1", userId, payload])).digest();
+}
+function encodeCursor(cursor: OwnerSearchCursor, userId: string, secret: string): string {
+  const payload = Buffer.from(JSON.stringify(cursor)).toString("base64url");
+  return `${payload}.${cursorSignature(payload, userId, secret).toString("base64url")}`;
+}
+function decodeCursor(value: string | null, userId: string, secret: string): OwnerSearchCursor | undefined {
+  if (value === null) return undefined;
+  const invalid = () => new AccessError(400, "This page is no longer available. Refresh the journal and try again.");
+  if (value.length > 2048 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(value)) throw invalid();
+  const [payload, signature] = value.split(".");
+  const supplied = Buffer.from(signature, "base64url"), expected = cursorSignature(payload, userId, secret);
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw invalid();
+  try {
+    const cursor: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) throw invalid();
+    return cursor as OwnerSearchCursor;
+  } catch { throw invalid(); }
 }
 async function forward(res: http.ServerResponse, response: Response): Promise<void> {
   response.headers.forEach((value, name) => { if (name !== "set-cookie") res.setHeader(name, value); });
@@ -175,6 +198,19 @@ async function createService(options: ServiceSettings) {
           const journal = Journal.open(accounts.path(userId));
           chmodSync(accounts.path(userId), 0o600);
           try {
+            if (path === "/api/journal/search" && method === "GET") {
+              const suppliedLimit = target.searchParams.get("limit");
+              if (suppliedLimit !== null && !/^[0-9]{1,2}$/.test(suppliedLimit)) throw new AccessError(400, "Page size must be between 1 and 50");
+              const result = journal.searchPage(target.searchParams.get("q") ?? "", {
+                mode: (target.searchParams.get("mode") ?? "words") as OwnerSearchMode,
+                project: target.searchParams.get("project") ?? undefined,
+                author: target.searchParams.get("author") ?? undefined,
+                limit: suppliedLimit === null ? 15 : Number(suppliedLimit),
+                cursor: decodeCursor(target.searchParams.get("cursor"), userId, options.secret),
+              });
+              const { next, ...output } = result;
+              return json(res, 200, { ...output, next_cursor: next ? encodeCursor(next, userId, options.secret) : null });
+            }
             if (path === "/api/journal" && method === "GET") {
               const { adapter } = await auth.$context;
               const consents = await adapter.findMany<{ clientId: string; scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: userId }] });

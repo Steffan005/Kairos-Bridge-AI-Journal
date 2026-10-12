@@ -23,7 +23,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   GENESIS_HASH,
   KINDS,
@@ -41,6 +41,8 @@ export const LIMITS = {
   tagMaxChars: 48,
   tagsMax: 16,
   searchMaxLimit: 50,
+  searchMaxQueryChars: 512,
+  searchMaxWords: 32,
   continueMaxLimit: 50,
   continueMaxChars: 50_000,
   wakeMaxChars: 50_000,
@@ -72,6 +74,39 @@ export interface SearchOptions {
 
 export interface SearchHit extends Entry {
   rank: number;
+}
+
+export type OwnerSearchMode = "words" | "exact" | "id";
+export type OwnerSearchMatchMode = "history" | "all" | "any" | "phrase" | "id";
+
+/** Internal continuation state. The hosted adapter authenticates its wire form. */
+export interface OwnerSearchCursor {
+  version: 1;
+  journal: string;
+  context: string;
+  snapshot: number;
+  before: number;
+  matched_mode: OwnerSearchMatchMode;
+}
+
+export interface OwnerSearchOptions {
+  mode?: OwnerSearchMode;
+  limit?: number;
+  /** The exact stored project tag, for example project-kitchen. */
+  project?: string;
+  /** The exact stored actor label. This is attribution, not verified identity. */
+  author?: string;
+  cursor?: OwnerSearchCursor;
+}
+
+export interface OwnerSearchPage {
+  entries: Entry[];
+  next: OwnerSearchCursor | null;
+  matched_mode: OwnerSearchMatchMode;
+  total: number;
+  snapshot_seq: number;
+  projects: string[];
+  authors: string[];
 }
 
 export interface WakeOptions {
@@ -287,6 +322,9 @@ export class Journal {
   private constructor(dbPath: string, db: Database.Database) {
     this.path = dbPath;
     this.db = db;
+    // SQLite lower()/LIKE only fold ASCII. Literal owner phrase matching uses
+    // the same Unicode lowercase operation for both the query and stored text.
+    db.function("kairos_lower", { deterministic: true }, (value: string) => value.toLowerCase());
     this.stmts = this.prepare();
   }
 
@@ -562,6 +600,80 @@ export class Journal {
       }
     }
     return [];
+  }
+
+  /**
+   * Owner browsing/search over the entire journal, in descending append order.
+   * A snapshot and exclusive sequence boundary prevent duplicate/missing pages
+   * as new notes arrive. No signed entry or search history is written here.
+   */
+  searchPage(query = "", opts: OwnerSearchOptions = {}): OwnerSearchPage {
+    if (typeof query !== "string") throw new JournalError("Search text must be text");
+    const q = query.normalize("NFC").trim();
+    if (q.length > LIMITS.searchMaxQueryChars) throw new JournalError(`Search text can contain at most ${LIMITS.searchMaxQueryChars} characters`);
+    const mode = opts.mode ?? "words";
+    if (!["words", "exact", "id"].includes(mode)) throw new JournalError("Choose Words, Exact phrase, or Note ID");
+    const limit = opts.limit ?? 15;
+    if (!Number.isInteger(limit) || limit < 1 || limit > LIMITS.searchMaxLimit) throw new JournalError(`Page size must be between 1 and ${LIMITS.searchMaxLimit}`);
+    const filter = (value: string | undefined, name: string, max: number): string | null => {
+      if (value === undefined) return null;
+      if (typeof value !== "string") throw new JournalError(`${name} must be text`);
+      const result = value.normalize("NFC").trim();
+      if (!result || result.length > max) throw new JournalError(`${name} must contain between 1 and ${max} characters`);
+      return result;
+    };
+    const project = filter(opts.project, "Project tag", LIMITS.tagMaxChars);
+    if (project && (!project.startsWith("project-") || project.length === "project-".length)) throw new JournalError("Choose a complete project tag, such as project-kitchen");
+    const author = filter(opts.author, "Author", LIMITS.actorMaxChars);
+    const id = mode === "id" ? q.toLowerCase() : q;
+    if (q && mode === "id" && !/^[0-9a-f]{16}$/.test(id)) throw new JournalError("Enter the complete 16-character Note ID");
+    const words = [...new Set(q.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [])];
+    if (q && mode === "words" && words.length > LIMITS.searchMaxWords) throw new JournalError(`Words search can contain at most ${LIMITS.searchMaxWords} different words`);
+    const context = createHash("sha256").update(JSON.stringify([mode, mode === "id" ? id : q, project, author])).digest("hex");
+    const journal = (this.db.prepare("SELECT value FROM meta WHERE key = 'journal_id'").get() as { value: string }).value;
+    const head = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM entries").get() as { seq: number }).seq;
+    const cursor = opts.cursor;
+    const expectedModes: OwnerSearchMatchMode[] = !q ? ["history"] : mode === "words" ? ["all", "any"] : mode === "exact" ? ["phrase"] : ["id"];
+    if (cursor && (cursor.version !== 1 || cursor.journal !== journal || cursor.context !== context ||
+      !Number.isSafeInteger(cursor.snapshot) || cursor.snapshot < 1 || cursor.snapshot > head ||
+      !Number.isSafeInteger(cursor.before) || cursor.before < 1 || cursor.before > cursor.snapshot ||
+      !expectedModes.includes(cursor.matched_mode))) {
+      throw new JournalError("This page no longer matches your search. Refresh the journal and try again.");
+    }
+    const snapshot = cursor?.snapshot ?? head;
+    const before = cursor?.before ?? snapshot + 1;
+    const base = `e.seq <= @snapshot AND (@author IS NULL OR e.actor = @author)
+      AND (@project IS NULL OR EXISTS (SELECT 1 FROM json_each(e.tags) AS tag WHERE tag.value = @project))`;
+    const params = { snapshot, author, project };
+    const match = (matched: OwnerSearchMatchMode): { where: string; values: Record<string, string> } => {
+      if (matched === "history") return { where: "1", values: {} };
+      if (matched === "id") return { where: "e.id = @id", values: { id } };
+      if (matched === "phrase") return { where: "instr(kairos_lower(e.text), @phrase) > 0", values: { phrase: q.toLowerCase() } };
+      if (!words.length) return { where: "0", values: {} };
+      // Every input token is quoted; FTS operators, column scopes, wildcards,
+      // quotes and parentheses in user text cannot become query instructions.
+      const terms = words.map(word => `"${word}"`).join(matched === "all" ? " AND " : " OR ");
+      return { where: "e.seq IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH @fts)", values: { fts: `{text tags} : (${terms})` } };
+    };
+    const count = (matched: OwnerSearchMatchMode): number => {
+      const clause = match(matched);
+      return (this.db.prepare(`SELECT COUNT(*) AS n FROM entries e WHERE ${base} AND ${clause.where}`).get({ ...params, ...clause.values }) as { n: number }).n;
+    };
+    let matchedMode = cursor?.matched_mode ?? expectedModes[0];
+    let total = count(matchedMode);
+    // Fallback is selected from the complete filtered snapshot, not each page.
+    if (!cursor && matchedMode === "all" && total === 0) { matchedMode = "any"; total = count(matchedMode); }
+    const clause = match(matchedMode);
+    const rows = this.db.prepare(`${SELECT_ENTRY} WHERE ${base} AND ${clause.where}
+      AND e.seq < @before ORDER BY e.seq DESC LIMIT @limit`).all({ ...params, ...clause.values, before, limit: limit + 1 }) as Row[];
+    const entries = rows.slice(0, limit).map(rowToEntry);
+    const next = rows.length > limit ? { version: 1 as const, journal, context, snapshot, before: entries[entries.length - 1].seq, matched_mode: matchedMode } : null;
+    // Catalogs deliberately cover the whole snapshot, including old-only tags
+    // and authors, so UI selectors do not depend on the current result page.
+    const projects = (this.db.prepare(`SELECT DISTINCT tag.value AS tag FROM entries e, json_each(e.tags) AS tag
+      WHERE e.seq <= ? AND tag.value LIKE 'project-%' AND length(tag.value) > 8 ORDER BY tag.value`).all(snapshot) as Array<{ tag: string }>).map(row => row.tag);
+    const authors = (this.db.prepare("SELECT DISTINCT actor FROM entries WHERE seq <= ? ORDER BY actor").all(snapshot) as Array<{ actor: string }>).map(row => row.actor);
+    return { entries, next, matched_mode: matchedMode, total, snapshot_seq: snapshot, projects, authors };
   }
 
   /**

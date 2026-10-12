@@ -19,6 +19,8 @@ The tests start real HTTP servers on free local ports. They create two synthetic
 
 Run `npm test` from the root separately for the original local Journal regression suite.
 
+The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot paging, Words, literal Exact phrase and exact Note ID lookup for native clients. Its local synthetic fixtures cover history beyond 50 entries, exact filters, complete text, Unicode phrase matching and authenticated cursor isolation. Deployment and phone behavior need their own receipt.
+
 ## Run the local screens
 
 Build with `npm run build` inside `hosted/`. Set these environment variables outside Git:
