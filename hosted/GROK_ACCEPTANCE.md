@@ -1,4 +1,4 @@
-# Grok connection preparation — October 11, 2026 ET
+# Grok shared-journal acceptance — October 11–12, 2026 ET
 
 ## Observed identity
 
@@ -72,20 +72,43 @@ Mac failure's cause is unisolated. No actual Grok note retrieval/write or native
 iPhone Grok acceptance is established by this attempt. Existing approvals remain
 intact; no executable change or new deployment is needed for the phone retry.
 
-## Actual-provider gate — pending
+## Superseding actual-provider acceptance — October12 morning ET
 
-1. Deployed source and preserved notes passed the preflight above. Recheck them
-   whenever the service changes.
-2. Complete the prepared Grok linking; inspect the real account, client, callback
-   and scopes at Kairos consent. The owner deliberately approves that access.
-3. In a NEW Grok conversation, retrieve a known saved project note with text,
-   timestamp, actor and ID. Save one explicitly requested note and independently
-   match the owner record. A new conversation must retrieve it.
-4. Confirm native journal display, approved access after sign-out, and refusal
-   after owner Disconnect while all notes remain.
-5. Test Grok on the actual iPhone app separately. Do not infer phone support from
-   the web UI or metadata. Grok Bot is another client surface, not automatically
-   covered by the consumer Grok connector.
+The owner added Kairos-Bridge through iPhone Safari. An independent authenticated
+owner API read confirmed the exact Grok approval on the same journal as Claude
+and ChatGPT, with journal read/write and offline scopes. Both existing approvals
+remained and the25 preflight records were unchanged.
+
+- A NEW actual Grok iPhone conversation retrieved the prior ChatGPT kitchen note
+  `534e5fc17915cd3a`, with matching text, displayed timestamp and actor.
+- That conversation saved once and separately read back
+  “Synthetic Grok iPhone acceptance: the kitchen curtains are linen.” Independent
+  owner API verification found exactly one matching entry: `c5bbceab828402c9`,
+  timestamp `2026-10-12T14:47:57.544Z`, actor `grok`, tag `project-kitchen`.
+- An actual Codex `journal_continue` call independently retrieved that record.
+- ANOTHER new Grok iPhone conversation retrieved the same note without a write
+  or reconnection. The owner refreshed native Kairos and confirmed it visible.
+- A separate new conversation in the Mac Grok web app also retrieved the note.
+  Its visible tool activity was inspected: `journal_continue` with project
+  `kitchen`, limit1 returned the matching ID and text. A generic web search was
+  visible before that connector call; the prompt had supplied no expected text
+  or ID. No write was requested there.
+
+Phone actions are operator reports independently matched to stored records;
+a raw phone tool trace was not captured. The Mac connector request/result was
+observed in its visible tool card. These results supersede pending-linking and
+phone-untested statements above while preserving the earlier failed attempt.
+
+## Remaining gates
+
+- Repeat Grok's actual native owner Sign out/Disconnect checks. The Grok-shaped
+  local fixture passed those controls; actual Grok refusal after native
+  Disconnect has not been measured. Existing approvals are currently retained.
+- Independent-user onboarding and a guided native Grok setup flow. Owner Safari
+  connector creation passed; the native Kairos app currently guides Claude.
+- Grok Bot is a separate client surface and has not been connected by these
+  consumer Grok tests.
+- Customer account recovery, production retention and wider release remain open.
 
 Actor labels remain client-supplied attribution. No consciousness, identity,
 market-size or production-readiness conclusion follows from these checks.

@@ -103,6 +103,7 @@ The existing connected ChatGPT iPhone app passed the slice above. Brand-new phon
 connector setup remains untested. This is a private development plugin, not a
 published plugin or customer release.
 
-Gemini and Grok remain separate actual-provider acceptance gates. Direct Codex
-tools passed in the observed task; a second user's Codex setup is not established.
+Gemini remains a separate actual-provider acceptance gate. [Grok iPhone
+read/write, fresh retrieval and native display subsequently passed](GROK_ACCEPTANCE.md).
+Direct Codex tools passed in the observed task; a second user's Codex setup is not established.
 Actor labels on entries remain client-supplied attribution, not vendor attestation.
