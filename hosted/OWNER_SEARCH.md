@@ -2,6 +2,14 @@
 
 This source adds a separate owner API for browsing and searching all authorized journal history. Local synthetic engine and HTTP fixtures test the implementation. Deployment and physical iPhone behavior require separate receipts.
 
+## Invited staging acceptance — October 12, 2026
+
+Executable source `235b48e0e8016f053f25440fb82fd9516c8df4b2` is deployed on the existing invited service; live source discovery matched. Its [exact-source CI run](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38306561503) passed, alongside 42 engine and 56 hosted local checks.
+
+Independent read-only owner calls paged all 59 then-existing records in four pages, matching every signed field to a pre-deployment export. A record beyond the former 50-note preview was recovered by Words, literal Exact phrase and uppercase exact Note ID. Missing owner authentication returned 401 and a query-changed cursor returned 400. Existing Claude, ChatGPT and Grok approvals remained present. These checks did not create new test notes or alter grants. Later genuine progress checkpoints add records normally.
+
+Actual native Simulator searches and exact Project/Author filtering passed against that service. Native build 5 is being packaged separately; physical search/paging acceptance remains pending. This is one invited owner's bounded history, not production-scale performance or independent customer onboarding. Private exports and receipts stay outside Git.
+
 `GET /api/journal/search` requires the existing live owner cookie session. An AI OAuth bearer token does not authorize this route. The account's existing isolated journal file determines the search boundary; project and author labels do not grant access.
 
 ## Request
