@@ -50,11 +50,33 @@ for exact callback matching without checking provider compatibility.
 
 These are local protocol/component results, not a hosted Grok conversation.
 
+## Deployed preparation and actual linking attempt — October12 morning ET
+
+- Live source discovery confirms exact
+  `f7467b13b1a6844a72e2bf27db0740bb91738b37`; health succeeds. Independent
+  owner preflight confirmed25 preserved records and existing Claude/ChatGPT
+  approvals, with no Grok grant.
+- Actual consumer setup reached the hosted Kairos consent screen on the intended
+  phone-owner account. It displayed the exact Grok identity and consumer return
+  host, with account identification, offline access and journal read/write scopes.
+  The owner explicitly confirmed approval intent.
+- The Mac attempt did not finish: computer-use click dispatch failed or the
+  permission popup closed before approval completed. The locally opened Grok
+  app is a Chrome-installed web app; it subsequently displayed “Connection
+  failed.” An independent owner read still found no Grok approval.
+- The owner was asked to finish custom-connector setup directly in iPhone Safari,
+  stopping at Connected or the first error, without duplicating a listed connector.
+
+Approval intent and a displayed consent page are not a completed grant. The
+Mac failure's cause is unisolated. No actual Grok note retrieval/write or native
+iPhone Grok acceptance is established by this attempt. Existing approvals remain
+intact; no executable change or new deployment is needed for the phone retry.
+
 ## Actual-provider gate — pending
 
-1. Deploy reviewed source on the existing approved service and confirm exact
-   source, all owner notes and existing revocation state.
-2. Reuse the prepared Grok connector; inspect the real account, client, callback
+1. Deployed source and preserved notes passed the preflight above. Recheck them
+   whenever the service changes.
+2. Complete the prepared Grok linking; inspect the real account, client, callback
    and scopes at Kairos consent. The owner deliberately approves that access.
 3. In a NEW Grok conversation, retrieve a known saved project note with text,
    timestamp, actor and ID. Save one explicitly requested note and independently
