@@ -11,13 +11,17 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
 import { stagingSettings } from "../src/deployment.js";
-import { CLAUDE_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
 const revision = "1".repeat(40);
 test("staging configuration rejects ambiguous or insecure deployment settings", () => {
   assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
-  for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata"]) assert.equal(isStagingClientAllowed(clientId), false);
+  assert.equal(isStagingClientAllowed(CHATGPT_CONNECTOR_CLIENT_ID), true);
+  for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata",
+    CHATGPT_CONNECTOR_CLIENT_ID + "?copy=1", CHATGPT_CONNECTOR_CLIENT_ID + "#copy", CHATGPT_CONNECTOR_CLIENT_ID + "/",
+    "https://chatgpt.com.evil.example/oauth/client.json", "https://user@chatgpt.com/oauth/client.json", "http://chatgpt.com/oauth/client.json",
+    "https://chatgpt.com/oauth/client/other-callback.json", "https://chatgpt.com/oauth/jwks.json"]) assert.equal(isStagingClientAllowed(clientId), false);
   const settings = { baseURL, directory: "/var/data/kairos", secret: "s".repeat(32), inviteCode: "i".repeat(32), sourceRevision: revision, port: 10000 };
   assert.equal(stagingSettings(settings).listenHost, "0.0.0.0");
   assert.equal(stagingSettings(settings).trustedEdge, undefined);
@@ -64,8 +68,10 @@ test("invited staging: proxy boundary, HTTPS metadata, signup gate and durable o
     await t.test("canonical HTTPS discovery advertises CIMD, S256 and public-client tokens", async () => {
       const metadata = await (await request("/.well-known/oauth-authorization-server/api/auth")).json();
       assert.equal(metadata.issuer, baseURL + "/api/auth"); assert.equal(metadata.client_id_metadata_document_supported, true);
+      assert.equal(metadata.authorization_response_iss_parameter_supported, true);
       assert.ok(metadata.code_challenge_methods_supported.includes("S256"));
       assert.ok(metadata.token_endpoint_auth_methods_supported.includes("none"));
+      assert.ok(metadata.token_endpoint_auth_methods_supported.includes("private_key_jwt"));
       const resource = await (await request("/.well-known/oauth-protected-resource/mcp")).json(); assert.equal(resource.resource, baseURL + "/mcp");
       const noToken = await request("/mcp", { method: "POST", body: "{}" }); assert.equal(noToken.status, 401); assert.match(noToken.headers.get("www-authenticate")!, /journal:read journal:write/);
       const badToken = await request("/mcp", { method: "POST", headers: { authorization: "Bearer invalid" }, body: "{}" }); assert.equal(badToken.status, 401); assert.match(badToken.headers.get("www-authenticate")!, /error="invalid_token"/);

@@ -13,11 +13,18 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import type { Accounts } from "./accounts.js";
 
-// First-provider staging. Claude Code is a distinct client and is not enabled here.
+// Exact consumer connector identities. Claude Code and callback-specific OpenAI
+// identities are distinct clients and are not enabled by this staging allow-list.
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
-export const isStagingClientAllowed = (clientId: string): boolean => clientId === CLAUDE_CONNECTOR_CLIENT_ID;
+export const CHATGPT_CONNECTOR_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
+export const isStagingClientAllowed = (clientId: string): boolean =>
+  clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID;
 
-export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: { staging?: boolean; trustedEdge?: "render-cloudflare" } = {}) {
+export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: {
+  staging?: boolean; trustedEdge?: "render-cloudflare";
+  /** In-process fixture transport only; no service route or environment setting exposes this override. */
+  metadataFetcher?: typeof fetchClientMetadataResource;
+} = {}) {
   if (secret.length < 32) throw new Error("Provide a random authentication secret of at least 32 characters");
   const database = new Database(join(accounts.directory, "auth.db"));
   database.pragma("journal_mode = WAL");
@@ -51,9 +58,10 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
         clientPrivileges: () => false, resourcePrivileges: () => false,
         customAccessTokenClaims: ({ user }) => ({ kairos_epoch: user ? accounts.get(user.id).epoch : -1 }),
       }),
-      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28",
-        // Exact document discovered by Grok's public GET; hosted reachability and iPhone use
-        // still require observation. The library validates metadata and redirect matching.
+      cimd({ fetchClientMetadataResource: options.metadataFetcher ?? fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28",
+        // Official client documents, not arbitrary same-host URLs. The runtime
+        // fetcher pins approved public DNS addresses and refuses redirects; the
+        // library validates metadata, exact callbacks and signed client assertions.
         isMetadataDocumentUrlAllowed: clientId => !options.staging || isStagingClientAllowed(clientId),
       }),
     ],
