@@ -19,7 +19,7 @@ The tests start real HTTP servers on free local ports. They create two synthetic
 
 Run `npm test` from the root separately for the original local Journal regression suite.
 
-The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot paging, Words, literal Exact phrase and exact Note ID lookup for native clients. Its local synthetic fixtures cover history beyond 50 entries, exact filters, complete text, Unicode phrase matching and authenticated cursor isolation. Executable source 235b48e is now live in invited staging: read-only paging reached all 59 then-existing notes with every signed field retained, and the three modes found an older note beyond the former preview. Exact-source CI and 42 engine/56 hosted checks passed. Native build 5 packaging and physical search/paging acceptance remain separate pending gates. See OWNER_SEARCH.md for the dated evidence and limits.
+The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot paging, Words, literal Exact phrase and exact Note ID lookup for native clients. Its local synthetic fixtures cover history beyond 50 entries, exact filters, complete text, Unicode phrase matching and authenticated cursor isolation. Executable source 235b48e is now live in invited staging: read-only paging reached all 59 then-existing notes with every signed field retained, and the three modes found an older note beyond the former preview. Exact-source CI and 42 engine/56 hosted checks passed. Native build 5 is processed and Testing in the existing owner group; physical search/paging acceptance remains pending. See OWNER_SEARCH.md for the dated evidence and limits.
 
 ## Run the local screens
 
