@@ -12,14 +12,17 @@ import { cimd } from "@better-auth/cimd";
 import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import type { Accounts } from "./accounts.js";
+import { geminiMetadataFetcher, isGeminiConnectorClientId } from "./gemini.js";
+export { isGeminiConnectorClientId } from "./gemini.js";
 
 // Exact consumer connector identities. Claude Code and callback-specific OpenAI
 // identities are distinct clients and are not enabled by this staging allow-list.
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 export const CHATGPT_CONNECTOR_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
 export const GROK_CONNECTOR_CLIENT_ID = "https://grok.com/oauth/mcp-client.json";
-export const isStagingClientAllowed = (clientId: string): boolean =>
-  clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID || clientId === GROK_CONNECTOR_CLIENT_ID;
+export const isStagingClientAllowed = (clientId: string, baseURL?: string): boolean =>
+  clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID || clientId === GROK_CONNECTOR_CLIENT_ID ||
+  (baseURL !== undefined && isGeminiConnectorClientId(clientId, baseURL));
 
 export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: {
   staging?: boolean; trustedEdge?: "render-cloudflare";
@@ -59,11 +62,11 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
         clientPrivileges: () => false, resourcePrivileges: () => false,
         customAccessTokenClaims: ({ user }) => ({ kairos_epoch: user ? accounts.get(user.id).epoch : -1 }),
       }),
-      cimd({ fetchClientMetadataResource: options.metadataFetcher ?? fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28",
+      cimd({ fetchClientMetadataResource: geminiMetadataFetcher(baseURL, options.metadataFetcher ?? fetchClientMetadataResource), metadataProfile: "mcp-2026-07-28",
         // Official client documents, not arbitrary same-host URLs. The runtime
         // fetcher pins approved public DNS addresses and refuses redirects; the
         // library validates metadata, exact callbacks and signed client assertions.
-        isMetadataDocumentUrlAllowed: clientId => !options.staging || isStagingClientAllowed(clientId),
+        isMetadataDocumentUrlAllowed: clientId => !options.staging || isStagingClientAllowed(clientId, baseURL),
       }),
     ],
   });

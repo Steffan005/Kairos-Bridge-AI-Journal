@@ -11,10 +11,25 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
 import { stagingSettings } from "../src/deployment.js";
-import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, isStagingClientAllowed } from "../src/auth.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, isGeminiConnectorClientId, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
 const revision = "1".repeat(40);
+test("Gemini metadata admission is bound to Google's exact user-bound path and this HTTPS host", () => {
+  const clientId = "https://accountlinking.google.com/clientidmetadata/user_bound_provider/user_bound_custom-mcp-123456789012345678901-journal_example_test";
+  assert.equal(isStagingClientAllowed(clientId, baseURL), true);
+  assert.equal(isStagingClientAllowed(clientId), false, "a service origin is required for Google identities");
+  for (const candidate of [clientId + "?copy=1", clientId + "#copy", clientId + "/",
+    clientId.replace("accountlinking.google.com", "accountlinking.google.com.evil.example"),
+    clientId.replace("https:", "http:"), clientId.replace("user_bound_provider", "%75ser_bound_provider"),
+    clientId.replace("123456789012345678901", "123"), clientId.replace("journal_example_test", "another_example_test"),
+    clientId.replace("user_bound_custom-mcp-", "custom-mcp-")]) {
+    assert.equal(isStagingClientAllowed(candidate, baseURL), false, candidate);
+  }
+  for (const origin of ["http://journal.example.test", "https://journal.example.test:8443", baseURL + "/path", baseURL + "?x=1", "not a URL"]) {
+    assert.equal(isGeminiConnectorClientId(clientId, origin), false, origin);
+  }
+});
 test("staging configuration rejects ambiguous or insecure deployment settings", () => {
   assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
   assert.equal(isStagingClientAllowed(CHATGPT_CONNECTOR_CLIENT_ID), true);
@@ -77,7 +92,9 @@ test("invited staging: proxy boundary, HTTPS metadata, signup gate and durable o
       assert.ok(metadata.token_endpoint_auth_methods_supported.includes("none"));
       assert.ok(metadata.token_endpoint_auth_methods_supported.includes("private_key_jwt"));
       const resource = await (await request("/.well-known/oauth-protected-resource/mcp")).json(); assert.equal(resource.resource, baseURL + "/mcp");
+      assert.deepEqual(resource.scopes_supported, ["journal:read", "journal:write", "offline_access"]);
       const noToken = await request("/mcp", { method: "POST", body: "{}" }); assert.equal(noToken.status, 401); assert.match(noToken.headers.get("www-authenticate")!, /journal:read journal:write/);
+      assert.match(noToken.headers.get("www-authenticate")!, /scope="journal:read journal:write offline_access"/);
       const badToken = await request("/mcp", { method: "POST", headers: { authorization: "Bearer invalid" }, body: "{}" }); assert.equal(badToken.status, 401); assert.match(badToken.headers.get("www-authenticate")!, /error="invalid_token"/);
     });
     await t.test("signup requires an invitation and development email; secure session cookie", async () => {

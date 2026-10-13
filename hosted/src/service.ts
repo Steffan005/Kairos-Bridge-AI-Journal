@@ -115,7 +115,7 @@ async function createService(options: ServiceSettings) {
       });
       if (["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"].includes(path) && method === "GET") return json(res, 200, {
         resource: `${baseURL}/mcp`, authorization_servers: [`${baseURL}/api/auth`],
-        scopes_supported: ["journal:read", "journal:write"], bearer_methods_supported: ["header"], resource_name: "Kairos Journal",
+        scopes_supported: ["journal:read", "journal:write", "offline_access"], bearer_methods_supported: ["header"], resource_name: "Kairos Journal",
       });
       const headers = fromNodeHeaders(req.headers);
       if (["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/api/auth"].includes(path) && method === "GET") {
@@ -145,7 +145,10 @@ async function createService(options: ServiceSettings) {
         let grant;
         try { grant = await verifyGrant(auth, accounts, baseURL, req.headers.authorization); }
         catch (e) {
-          res.setHeader("www-authenticate", `Bearer resource_metadata="${baseURL}/.well-known/oauth-protected-resource/mcp", scope="journal:read journal:write"${req.headers.authorization ? ', error="invalid_token"' : ''}`);
+          // Renewal remains an explicit consented scope, not a requirement on
+          // already-approved journal tokens. Advertise it so clients can ask to
+          // stay connected across chats rather than silently lose access at 15m.
+          res.setHeader("www-authenticate", `Bearer resource_metadata="${baseURL}/.well-known/oauth-protected-resource/mcp", scope="journal:read journal:write offline_access"${req.headers.authorization ? ', error="invalid_token"' : ''}`);
           throw e;
         }
         if (method !== "POST") { res.setHeader("allow", "POST"); throw new AccessError(405, "Use POST for this stateless MCP endpoint"); }

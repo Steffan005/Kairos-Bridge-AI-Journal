@@ -91,7 +91,7 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       client = await register();
       const metadata = await (await request("/.well-known/oauth-authorization-server/api/auth")).json();
       assert.equal(metadata.issuer, baseURL + "/api/auth"); assert.equal(metadata.code_challenge_methods_supported[0], "S256");
-      const noAccess = await mcpRequest(); assert.equal(noAccess.status, 401); assert.match(noAccess.headers.get("www-authenticate")!, /resource_metadata/); assert.match(noAccess.headers.get("www-authenticate")!, /scope="journal:read journal:write"/);
+      const noAccess = await mcpRequest(); assert.equal(noAccess.status, 401); assert.match(noAccess.headers.get("www-authenticate")!, /resource_metadata/); assert.match(noAccess.headers.get("www-authenticate")!, /scope="journal:read journal:write offline_access"/);
       assert.equal((await request("/api/journal")).status, 401);
       assert.equal((await request("/api/journal", { headers: { origin: "https://hostile.example" } })).status, 403);
       assert.equal((await request("/consent?client_id=changed", { headers: { cookie: a.cookie } })).status, 400);
