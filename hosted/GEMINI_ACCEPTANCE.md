@@ -21,6 +21,10 @@ The real account identifier, OAuth state, challenge, codes, tokens and private c
 
 ## Required acceptance before a support claim
 
+Source `6ffb4e8dce888f1d4aa54139a043b3c756c9df2a` is deployed to the existing invited pilot. All **72 hosted** and **42 engine** checks passed; CI run [38396503688](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38396503688) succeeded. After restart, an independent owner API comparison matched all 67 pre-update records exactly, verified the then-current 68-record chain and matched all three existing approvals unchanged.
+
+A fresh actual Gemini linking attempt reached Kairos's real permission page on the same phone-pilot journal. Google's metadata now declares `journal:read journal:write offline_access`; the visible Kairos page requests read, save/pin and access between conversations. Owner approval is pending at this checkpoint. No actual Gemini read/write or renewal has passed yet.
+
 - Generated-key protocol fixtures: valid signed exchange; refused wrong callback, wrong key, unsigned exchange and wrong PKCE; exact consent scopes; key refresh after expiry; metadata overflow; owner sign-out and Disconnect.
 - Deployment reports the exact tested revision; existing owner records and approvals survive unchanged.
 - Actual Google/Kairos consent shows the intended owner journal and requested scopes.
