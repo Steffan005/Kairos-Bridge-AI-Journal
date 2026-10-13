@@ -48,9 +48,15 @@ Another new Gemini iPhone conversation returned that same record. The owner expl
 
 Source `e790d8965afe04ace663d8d6ff251fc63c46782e` subsequently deployed the neutral restart message for invalid consent links, with 75 hosted checks passing and successful CI. Independent checks matched every one of the 74 pre-check journal records unchanged and found all four approvals, including Google's read/write and explicitly approved renewal. This message change leaves authorization expiry and verification intact.
 
-During the final post-expiry read check, the owner updated Gemini on iPhone and reported that Kairos was no longer present in the app's `@` picker or his phone browser, while the Mac connection reportedly still worked. The actual phone Connected Apps screen and account comparison are requested. The cause is unresolved; no permissions or clients were changed to work around it. The service was healthy and the saved record remained present once. **Continued Gemini mobile availability and access beyond the initial 15-minute token remain open gates.** No successful live refresh exchange is claimed.
+During the final post-expiry read check, the owner updated Gemini on iPhone and reported that Kairos was no longer present in the app's `@` picker or his phone browser, while the Mac connection reportedly still worked. Subsequent native screenshots show the standard apps list without a visible Kairos/custom app section. The matching phone account and phone website configuration remain unverified. The cause is unresolved; no permissions or clients were changed to work around it. The service was healthy and the saved record remained present once. **Continued Gemini mobile availability and access beyond the initial 15-minute token remain open gates.** No successful live refresh exchange is claimed.
 
 This hosted connector uses Google's account-level custom app and a public HTTPS endpoint. It does not depend on a desktop Chrome extension, local Mac daemons, Tailscale or the older Trinity Bridge. Historical local-bridge explanations do not diagnose this configuration. Physical Gemini Sign out/Disconnect checks and independent onboarding also remain untested.
+
+## Current pilot scope: computer browser; mobile follow-up on hold
+
+The owner chose to defer further Gemini iPhone troubleshooting and the live renewal check. A fresh Mac Chrome Connected Apps page independently showed Kairos-Bridge enabled and last sync at 09:01 EDT on October 13; this settings observation is not a new tool-call or refresh trace. The owner reports that Gemini continues to work through the computer browser.
+
+For the current pilot, scope Gemini to that computer web path. Its initial owner-phone round trip remains dated evidence; continued mobile access, phone-only setup and live renewal are unverified/on hold. The original Claude, ChatGPT and Grok phone evidence remains separate. No extra client, duplicate connector, privacy setting or grant was changed.
 
 ## Primary provider instructions
 
