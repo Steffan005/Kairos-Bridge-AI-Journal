@@ -23,7 +23,9 @@ The real account identifier, OAuth state, challenge, codes, tokens and private c
 
 Source `6ffb4e8dce888f1d4aa54139a043b3c756c9df2a` is deployed to the existing invited pilot. All **72 hosted** and **42 engine** checks passed; CI run [38396503688](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/actions/runs/38396503688) succeeded. After restart, an independent owner API comparison matched all 67 pre-update records exactly, verified the then-current 68-record chain and matched all three existing approvals unchanged.
 
-A fresh actual Gemini linking attempt reached Kairos's real permission page on the same phone-pilot journal. Google's metadata now declares `journal:read journal:write offline_access`; the visible Kairos page requests read, save/pin and access between conversations. Owner approval is pending at this checkpoint. No actual Gemini read/write or renewal has passed yet.
+A fresh actual Gemini linking attempt reached Kairos's real permission page on the same phone-pilot journal. Google's metadata now declares `journal:read journal:write offline_access`; the visible Kairos page requests read, save/pin and access between conversations. The owner approved these permissions. The first request expired during UI troubleshooting, so its submit returned `invalid_signature`; the actual signed URL's expiry was already 351 seconds in the past. A fresh request then succeeded with the original verification and expiry intact.
+
+The owner API now lists a fourth approval with the three requested scopes. Gemini saved the custom app as **Kairos-Bridge**, enabled, and displayed eight journal tools. Actual Gemini iPhone read/write, another fresh retrieval, native visibility and renewal remain pending. An enabled app and tool listing are distinct from an actual journal conversation.
 
 - Generated-key protocol fixtures: valid signed exchange; refused wrong callback, wrong key, unsigned exchange and wrong PKCE; exact consent scopes; key refresh after expiry; metadata overflow; owner sign-out and Disconnect.
 - Deployment reports the exact tested revision; existing owner records and approvals survive unchanged.
