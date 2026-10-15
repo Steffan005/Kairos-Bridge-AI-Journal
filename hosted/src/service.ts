@@ -5,6 +5,7 @@ import http from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { isIP } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { oauthProviderAuthServerMetadata, verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { fromNodeHeaders } from "better-auth/node";
@@ -12,7 +13,7 @@ import { Journal, JournalError, HistoricalImportConflict, compareEntryChronology
 import { createJournalServer } from "../../src/tools.js";
 import { ATTRIBUTION, COPYRIGHT, LICENSE_SPDX, LICENSE_URL } from "../../src/about.js";
 import { Accounts } from "./accounts.js";
-import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
+import { AccessError, disconnect, makeAuth, migrateAuth, oauthGrantOwner, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
 import { acquireDataLease } from "./dataLease.js";
 import { RecoveryGate } from "./recoveryGate.js";
@@ -20,6 +21,7 @@ import { captureRecoveryWhileLeased, type RecoveryCaptureOptions } from "./recov
 import { decodeHistoryImportBody, MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
 import { streamJournalExport } from "./journalExport.js";
 import { oauthWriteOrigin, ownerWriteOrigin } from "./writeOrigin.js";
+import { createAccountAccess } from "./accountAccess.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
@@ -97,6 +99,7 @@ async function createService(options: ServiceSettings) {
     await context.checkSchema?.();
   } catch (error) { database.close(); accounts.close(); releaseLease(); throw error; }
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
+  const accountAccess = createAccountAccess({ auth, database, accounts, baseURL, delivery: options.accountDelivery, backgroundTaskHandler: recoveryGate.track });
   const owner = async (req: http.IncomingMessage) => {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
     if (!session) throw new AccessError(401, "Please sign in to Kairos");
@@ -128,7 +131,27 @@ async function createService(options: ServiceSettings) {
       if (["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/api/auth"].includes(path) && method === "GET") {
         return forward(res, await metadataHandler(new Request(target, { headers })));
       }
+      if (path === "/api/account" || path.startsWith("/api/account/")) {
+        const edgeIP = options.trustedEdge === "render-cloudflare" ? req.headers["cf-connecting-ip"] : undefined;
+        const sourceIP = typeof edgeIP === "string" && isIP(edgeIP) ? edgeIP : req.socket.remoteAddress;
+        const rateKey = sourceIP && isIP(sourceIP) ? sourceIP : "unknown-peer";
+        const input = method === "POST" ? JSON.parse((await body(req)).toString()) : undefined;
+        return forward(res, await accountAccess.handle({ path, method, headers, body: input, rateKey }));
+      }
       if (path.startsWith("/api/auth/")) {
+        // Credential changes must pass the bound, one-use Kairos challenge flow.
+        // Block the parameterized library callback as well as its exact routes.
+        const authPath = path.slice("/api/auth".length).replace(/\/+$/, "");
+        if (["/change-email", "/verify-email", "/send-verification-email", "/request-password-reset", "/reset-password", "/change-password"].includes(authPath) || authPath.startsWith("/reset-password/")) {
+          throw new AccessError(404, "Use Kairos account settings for email and password changes");
+        }
+        const tokenRequest = authPath === "/oauth2/token" && method === "POST";
+        if (tokenRequest && req.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase() !== "application/x-www-form-urlencoded") {
+          // The pinned parser's media allow-list uses substring matching. An
+          // ambiguous JSON/form type can otherwise bypass the owner lookup
+          // below. Admit exactly the provider's documented form media type.
+          throw new AccessError(415, "OAuth token requests require application/x-www-form-urlencoded");
+        }
         let bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
         if (path === "/api/auth/sign-up/email") {
           const input = JSON.parse(bytes!.toString());
@@ -144,7 +167,24 @@ async function createService(options: ServiceSettings) {
         // Removing/changing a library consent also invalidates already-issued JWTs.
         const consentMutation = ["/api/auth/oauth2/delete-consent", "/api/auth/oauth2/update-consent"].includes(path);
         const sessionOwner = consentMutation ? await owner(req) : undefined;
-        const response = await auth.handler(new Request(target, { method, headers, ...(bytes ? { body: new Uint8Array(bytes) } : {}) }));
+        const dispatchAuth = () => auth.handler(new Request(target, { method, headers, ...(bytes ? { body: new Uint8Array(bytes) } : {}) }));
+        // An old-password sign-in must finish before reset removes its session;
+        // it must not create a new session after a concurrent reset completes.
+        let signInOwner: string | undefined;
+        if (authPath === "/sign-in/email" && method === "POST" && bytes) {
+          const input = JSON.parse(bytes.toString());
+          if (typeof input?.email === "string") {
+            signInOwner = (database.prepare('SELECT id FROM user WHERE email = ?').get(input.email.trim().toLowerCase()) as { id: string } | undefined)?.id;
+          }
+        }
+        let grantOwner: string | undefined;
+        if (tokenRequest && bytes) {
+          // Match Better Call's last-value-wins form parsing. Invalid inputs still
+          // go through the provider's normal response and reveal no owner ID.
+          grantOwner = oauthGrantOwner(database, Object.fromEntries(new URLSearchParams(bytes.toString())));
+        }
+        const lockOwner = signInOwner ?? grantOwner;
+        const response = lockOwner ? await accounts.locked(lockOwner, dispatchAuth) : await dispatchAuth();
         if (response.ok && sessionOwner) await accounts.locked(sessionOwner, () => disconnect(auth, accounts, sessionOwner));
         return forward(res, response);
       }
@@ -172,7 +212,7 @@ async function createService(options: ServiceSettings) {
           finally { await transport.close(); await mcp.close(); journal.close(); }
         });
       }
-      if (path === "/" || path === "/sign-in" || path === "/journal" || path === "/consent") {
+      if (["/", "/sign-in", "/journal", "/consent", "/account", "/forgot-password", "/reset-password", "/confirm-email"].includes(path)) {
         if (method !== "GET") throw new AccessError(405, "Use GET");
         if (path === "/") { res.writeHead(302, { location: "/journal" }); return res.end(); }
         let consent;
@@ -187,10 +227,11 @@ async function createService(options: ServiceSettings) {
             redirectHost: new URL(target.searchParams.get("redirect_uri")!).hostname,
             scopes: (target.searchParams.get("scope") ?? "").split(" ").filter(Boolean) };
         }
-        if (path === "/journal") {
-          try { await owner(req); } catch { res.writeHead(302, { location: "/sign-in" }); return res.end(); }
+        if (path === "/journal" || path === "/account") {
+          try { await owner(req); } catch { res.writeHead(302, { location: path === "/account" ? "/sign-in?returnTo=account" : "/sign-in" }); return res.end(); }
         }
-        const output = page(path === "/sign-in" ? "sign-in" : path === "/consent" ? "consent" : "journal", consent, { staging });
+        const view = path.slice(1) as Parameters<typeof page>[0];
+        const output = page(view, consent, { staging, accountRecovery: Boolean(options.accountDelivery) });
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": output.csp }); return res.end(output.html);
       }
       if (path.startsWith("/api/journal")) {
@@ -198,6 +239,9 @@ async function createService(options: ServiceSettings) {
         if (!["GET", "HEAD"].includes(method) && req.headers.origin !== baseURL) throw new AccessError(403, "Open Kairos to change your journal");
         const bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req, path === "/api/journal/import-history" && method === "POST" ? MAX_HISTORY_IMPORT_BODY : MAX_BODY);
         return await accounts.locked(userId, async () => {
+          // A slow upload or queued action must not outlive browser-session
+          // revocation by password recovery while it waits for this lock.
+          if (await owner(req) !== userId) throw new AccessError(401, "Please sign in to Kairos");
           if (path === "/api/journal/disconnect" && method === "POST") { await disconnect(auth, accounts, userId); return json(res, 200, { disconnected: true }); }
           if (path === "/api/journal" && method === "DELETE") { await disconnect(auth, accounts, userId); accounts.delete(userId); return json(res, 200, { deleted: true, backups: backupNotice }); }
           if (path === "/api/journal/create" && method === "POST") { accounts.recreate(userId); return json(res, 201, { created: true }); }

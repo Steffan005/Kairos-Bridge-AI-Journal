@@ -3,8 +3,9 @@
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
+import type { AccountDelivery } from "./accountAccess.js";
 
-export interface PreviewOptions { baseURL: string; directory: string; secret: string }
+export interface PreviewOptions { baseURL: string; directory: string; secret: string; accountDelivery?: AccountDelivery }
 export interface StagingOptions extends PreviewOptions {
   port: number;
   inviteCode: string;

@@ -3,6 +3,7 @@
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import { createStaging } from "./service.js";
 import { createRecoveryControl } from "./recoveryControl.js";
+import { accountDeliveryFromEnvironment } from "./accountMail.js";
 const baseURL = process.env.KAIROS_STAGING_URL ?? process.env.RENDER_EXTERNAL_URL;
 const directory = process.env.KAIROS_STAGING_DATA;
 const secret = process.env.KAIROS_STAGING_SECRET;
@@ -12,7 +13,9 @@ const recoverySocket = process.env.KAIROS_RECOVERY_SOCKET;
 const recoveryOutput = process.env.KAIROS_RECOVERY_OUTPUT;
 if (!baseURL || !directory || !secret || !inviteCode || !sourceRevision) throw new Error("Set the HTTPS origin, persistent data path, auth/invitation secrets, and source revision outside Git");
 if (Boolean(recoverySocket) !== Boolean(recoveryOutput)) throw new Error("Set KAIROS_RECOVERY_SOCKET and KAIROS_RECOVERY_OUTPUT together to explicitly enable private operator recovery");
+const accountDelivery = accountDeliveryFromEnvironment(baseURL);
 const staging = await createStaging({ baseURL, directory, secret, inviteCode, sourceRevision, port: Number(process.env.PORT ?? 10000),
+  accountDelivery,
   ...(process.env.RENDER === "true" ? { trustedEdge: "render-cloudflare" as const } : {}),
 });
 let recovery: Awaited<ReturnType<typeof createRecoveryControl>> | undefined;
@@ -20,7 +23,7 @@ try {
   if (recoverySocket && recoveryOutput) recovery = await createRecoveryControl({ socketPath: recoverySocket, outputDirectory: recoveryOutput, sourceRevision, capture: paths => staging.captureRecovery(paths) });
   await staging.listen();
 } catch (error) { await recovery?.close(); await staging.close(); throw error; }
-process.stderr.write(`Kairos invited development staging: ${baseURL}\nUse .test accounts and approved project notes. Customer account recovery is not ready.\n`);
+process.stderr.write(`Kairos invited development staging: ${baseURL}\nNew accounts remain invitation-gated test accounts. Account email delivery is ${accountDelivery ? "configured" : "disabled"}.\n`);
 let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => {
   if (stopping) return;

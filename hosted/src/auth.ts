@@ -2,6 +2,7 @@
 // Copyright (C) 2026  Steffan Douglas Haskins
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import Database from "better-sqlite3";
+import { createHash } from "node:crypto";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { betterAuth } from "better-auth";
@@ -39,7 +40,10 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
   const auth = betterAuth({
     appName: "Kairos Journal preview", baseURL, secret, database,
     trustedOrigins: [baseURL],
-    disabledPaths: ["/token"], // Never expose a generic account JWT as a journal credential.
+    // Account recovery has owner-bound, single-use records and atomic cleanup in
+    // accountAccess.ts. Raw library routes would bypass those invariants.
+    disabledPaths: ["/token", "/change-email", "/verify-email", "/send-verification-email",
+      "/request-password-reset", "/reset-password", "/change-password"],
     emailAndPassword: { enabled: true, minPasswordLength: 12 },
     session: { cookieCache: { enabled: false } },
     // Render's public edge routes through Cloudflare. Use its single overwritten
@@ -76,6 +80,29 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
   return { auth, database };
 }
 export type KairosAuth = ReturnType<typeof makeAuth>["auth"];
+
+/**
+ * Selects a serialization lock, never authorizes a grant. Better Auth 1.7.7's
+ * default storeTokens hasher is SHA-256 UTF-8 encoded as unpadded base64url.
+ * makeAuth keeps that default and configures no token prefix or custom format.
+ * The provider still consumes/verifies the token, client and PKCE inside the
+ * lock. Keep this lookup aligned when upgrading the pinned provider.
+ */
+export function oauthGrantOwner(database: Database.Database, input: Record<string, string>): string | undefined {
+  const grant = input.grant_type?.trim();
+  const token = grant === "refresh_token" ? input.refresh_token : grant === "authorization_code" ? input.code : undefined;
+  if (!token) return;
+  const identifier = createHash("sha256").update(token).digest("base64url");
+  if (grant === "refresh_token") {
+    return (database.prepare('SELECT userId FROM "oauthRefreshToken" WHERE token = ?').get(identifier) as { userId: string } | undefined)?.userId;
+  }
+  const row = database.prepare('SELECT value FROM "verification" WHERE identifier = ?').get(identifier) as { value: string } | undefined;
+  if (!row) return;
+  try {
+    const value = JSON.parse(row.value);
+    if (value?.type === "authorization_code" && typeof value.userId === "string") return value.userId;
+  } catch { /* The provider will reject malformed verification records. */ }
+}
 
 export async function migrateAuth(auth: KairosAuth, database: Database.Database): Promise<void> {
   // Exact dependency versions own this schema. Run their migration once, not on every restart.
