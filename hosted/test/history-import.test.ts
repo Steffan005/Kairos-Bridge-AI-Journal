@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
 import { createHash, randomBytes } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { createPreview } from "../src/service.js";
 import { Journal, type Entry, type HistoricalRecord } from "../../src/journal.js";
 import { MAX_HISTORY_IMPORT_BODY } from "../src/historyImport.js";
@@ -144,6 +145,29 @@ test("owner history import: atomic, isolated, replayable provenance without chan
       assert.equal(oversized.status, 413);
       const ordinary = await post("/api/journal/notes", { text: "x".repeat(70_000) }, alice.cookie); assert.equal(ordinary.status, 413);
       assert.equal(preview.server.requestTimeout, 15_000); assert.equal(preview.server.headersTimeout, 10_000);
+    });
+    await t.test("gzip import preserves a mixed code batch and enforces both wire and expansion limits", async () => {
+      const compressedPost = (bytes: Buffer, encoding = "gzip", cookie: string | null = alice.cookie, origin: string | null = baseURL) => request("/api/journal/import-history", { method: "POST", headers: {
+        "content-type": "application/json", "content-encoding": encoding, ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}),
+      }, body: new Uint8Array(bytes) });
+      const records = Array.from({ length: 50 }, (_, i) => ({ ...record(`gzip-code-${i}`), text: `SYNTHETIC historical code ${i}\n` + "const value = 'blue tile';\nfunction remember(input) { return { value, input }; }\n".repeat(65) }));
+      const bytes = gzipSync(Buffer.from(JSON.stringify({ records })));
+      assert.equal((await compressedPost(bytes, "gzip", null)).status, 401);
+      assert.equal((await compressedPost(bytes, "gzip", alice.cookie, null)).status, 403);
+      const before = journalSnapshot(alice.id), response = await compressedPost(bytes); assert.equal(response.status, 200);
+      const output = await response.json(); assert.equal(output.inserted, 50);
+      const journal = Journal.open(preview.accounts.path(alice.id));
+      try { output.ids.forEach((id: string, i: number) => assert.equal(journal.get(id)?.text, records[i].text)); assert.ok(journal.verify().ok); }
+      finally { journal.close(); }
+      const replay = await compressedPost(bytes); assert.equal(replay.status, 200); assert.equal((await replay.json()).skipped, 50);
+      const after = journalSnapshot(alice.id); assert.equal(after.count, before.count + 50);
+      const invalid = await compressedPost(Buffer.from("invalid gzip")); assert.equal(invalid.status, 400); assert.doesNotMatch(await invalid.text(), /invalid gzip|\.db/);
+      assert.equal((await compressedPost(gzipSync(Buffer.alloc(MAX_HISTORY_IMPORT_BODY + 1, 32)))).status, 413);
+      assert.equal((await compressedPost(Buffer.alloc(MAX_HISTORY_IMPORT_BODY + 1, 32))).status, 413);
+      for (const encoding of ["br", "deflate", "gzip, gzip", ""]) assert.equal((await compressedPost(bytes, encoding)).status, 415);
+      const ordinary = await request("/api/journal/notes", { method: "POST", headers: { cookie: alice.cookie, origin: baseURL, "content-type": "application/json", "content-encoding": "gzip" }, body: new Uint8Array(gzipSync(Buffer.from(JSON.stringify({ text: "SYNTHETIC compressed ordinary note is not supported" })))) });
+      assert.equal(ordinary.status, 400, "other routes keep their existing uncompressed JSON behavior");
+      assert.deepEqual(journalSnapshot(alice.id), after);
     });
     await t.test("v2 chronology cursors keep owner and tamper checks", async () => {
       const first = await request("/api/journal/search?limit=1", { headers: { cookie: alice.cookie } }); assert.equal(first.status, 200);

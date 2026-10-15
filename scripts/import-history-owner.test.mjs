@@ -7,6 +7,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { checkedOrigin, IMPORT_LIMITS, ownerImportBatches, runOwnerHistoryImport } from './import-history-owner.mjs';
 
 const origin = 'https://synthetic-journal.example.test', revision = 'c'.repeat(40), cookie = 'synthetic-owner-cookie=PRIVATE_SYNTHETIC_COOKIE';
@@ -53,7 +54,8 @@ test('owner uploader resumes acknowledged batches and replays an ambiguous write
       return new Response(new ReadableStream({ start(controller) { for (let i = 0; i < bytes.length; i += 137) controller.enqueue(bytes.subarray(i, i + 137)); controller.close(); } }), { headers: { 'content-type': 'application/json', 'content-length': String(bytes.length) } });
     }
     assert.equal(parsed.pathname, '/api/journal/import-history'); assert.equal(options.method, 'POST'); assert.equal(options.headers.origin, origin); assert.equal(options.headers.authorization, undefined);
-    const batch = JSON.parse(options.body).records; posts.push(batch[0].source_id); assert.ok(Buffer.byteLength(options.body) < 350 * 1024);
+    assert.equal(options.headers['content-encoding'], 'gzip');
+    const raw = gunzipSync(options.body); const batch = JSON.parse(raw.toString('utf8')).records; posts.push(batch[0].source_id); assert.ok(raw.length < 350 * 1024);
     if (batch[0].source_id === '50' && secondAttempts++ < 2) return new Response('{}', { status: 503 });
     if (batch[0].source_id === '100' && failLast) return new Response('{"error":"private note must not be printed"}', { status: 400 });
     let inserted = 0, skipped = 0;

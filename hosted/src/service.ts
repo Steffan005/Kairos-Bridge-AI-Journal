@@ -15,7 +15,7 @@ import { Accounts } from "./accounts.js";
 import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
 import { acquireDataLease } from "./dataLease.js";
-import { MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
+import { decodeHistoryImportBody, MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
 import { streamJournalExport } from "./journalExport.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
@@ -204,7 +204,7 @@ async function createService(options: ServiceSettings) {
           chmodSync(accounts.path(userId), 0o600);
           try {
             if (path === "/api/journal/import-history" && method === "POST") {
-              const records = parseHistoryImport(JSON.parse(bytes!.toString()));
+              const records = parseHistoryImport(JSON.parse(decodeHistoryImportBody(bytes!, req.headers["content-encoding"]).toString()));
               try { return json(res, 200, journal.importHistorical(records, "owner")); }
               catch (error) {
                 if (error instanceof HistoricalImportConflict) throw new AccessError(409, "Historical import conflicts with an existing source record. No records in this batch were saved.");

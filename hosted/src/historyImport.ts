@@ -4,9 +4,22 @@
 import { KINDS } from "../../src/canonical.js";
 import type { HistoricalRecord } from "../../src/journal.js";
 import { AccessError } from "./auth.js";
+import { gunzipSync } from "node:zlib";
 
 export const MAX_HISTORY_IMPORT_BODY = 512 * 1024;
 export const MAX_HISTORY_IMPORT_RECORDS = 50;
+/** Bound compressed input and decompressed JSON separately; never decode other routes. */
+export function decodeHistoryImportBody(bytes: Buffer, encoding: string | undefined): Buffer {
+  if (bytes.length > MAX_HISTORY_IMPORT_BODY) throw new AccessError(413, "Request is too large");
+  const token = encoding?.trim().toLowerCase();
+  if (token === undefined || token === "identity") return bytes;
+  if (token !== "gzip") throw new AccessError(415, "Use JSON or gzip for historical import");
+  try { return gunzipSync(bytes, { maxOutputLength: MAX_HISTORY_IMPORT_BODY }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") throw new AccessError(413, "Historical import expands beyond the request limit");
+    throw new AccessError(400, "Invalid compressed historical import");
+  }
+}
 const REQUIRED_FIELDS = ["source_store", "source_id", "original_timestamp", "original_actor", "source_file_sha256", "canonical_actor", "timezone", "text"];
 const ALLOWED_FIELDS = new Set([...REQUIRED_FIELDS, "kind", "tags", "source_metadata"]);
 const METADATA_FIELDS = new Set(["source_context_sha256", "source_record_sha256", "original_record_hash", "original_value_hash", "original_parent_id", "original_parents", "original_timestamp_value", "original_key", "lane", "scope", "recipient", "source_category", "author_conflict", "source_actor", "source_role"]);

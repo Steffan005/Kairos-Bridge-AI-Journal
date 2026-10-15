@@ -6,7 +6,7 @@ The mutation requires the exact service `Origin` as well as the existing owner c
 
 ## Request and response
 
-The JSON body has one field, `records`, containing 1–50 records. This route alone accepts at most 512 KiB; ordinary owner, auth and MCP request bodies retain the 64 KiB limit. Existing 15-second request and 10-second header timeouts remain in place.
+The JSON body has one field, `records`, containing 1–50 records. This route accepts plain JSON or the standard `Content-Encoding: gzip` representation. Compressed wire bytes and decompressed JSON are each bounded at 512 KiB; ordinary owner, auth and MCP request bodies retain their existing uncompressed 64 KiB limit. Invalid gzip returns 400, oversized expansion/wire data 413, and unsupported content encodings 415. Owner authentication and exact Origin are checked before decoding. Existing 15-second request and 10-second header timeouts remain in place.
 
 ```json
 {
@@ -84,7 +84,7 @@ node scripts/import-history-owner.mjs --origin https://journal.example.test --cr
 
 This invocation is a template with synthetic paths/host/revision. Supply the existing selected owner's actual private files and the observed revision. `--revision` verifies `/about` before any import. The uploader requires every known baseline ID and signed field to match that owner's live journal before writing; it does not accept an empty baseline. It copies the reviewed plan privately and hashes the snapshot so a concurrent change to the source file cannot change a running migration.
 
-The operator streams the plan in batches of at most 50 records and less than 350 KiB. Each accepted response produces a fsynced private acknowledgment ledger mapping source identity and record fingerprint to the returned journal ID in input order. The ledger contains no note text or cookie. stdout contains counts and elapsed time only. Before/after exports download directly into private files with streaming SHA-256 fingerprints; they are not parsed wholesale in memory. Owner connection metadata and known baseline signed fields are checked again afterward.
+The operator streams the plan in batches of at most 50 records and less than 350 KiB of raw JSON, then sends each batch using gzip content encoding. The reviewed record data, raw JSON fingerprint and idempotent source identities remain unchanged. Each accepted response produces a fsynced private acknowledgment ledger mapping source identity and record fingerprint to the returned journal ID in input order. The ledger contains no note text or cookie. stdout contains counts and elapsed time only. Before/after exports download directly into private files with streaming SHA-256 fingerprints; they are not parsed wholesale in memory. Owner connection metadata and known baseline signed fields are checked again afterward.
 
 If an HTTP response is lost after a successful write, the operator retries the identical batch; engine source identities prevent duplication. Network/5xx retries are bounded; 400/401/403/409 and other non-success client responses stop the run. Keep all receipts and fix the cause. Resume only with the identical origin, baseline, reviewed records and expected revision:
 

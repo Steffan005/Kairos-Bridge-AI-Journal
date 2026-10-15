@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { gzipSync } from 'node:zlib';
 
 export const IMPORT_LIMITS = Object.freeze({ batchRecords: 50, batchBytes: 350 * 1024 - 1, lineBytes: 64 * 1024, baselineBytes: 32 * 1024 * 1024, exportBytes: 2 * 1024 * 1024 * 1024, attempts: 3 });
 const hex = (value, length) => typeof value === 'string' && new RegExp(`^[0-9a-f]{${length}}$`).test(value);
@@ -197,9 +198,10 @@ export async function runOwnerHistoryImport(options, dependencies = {}) {
     if (acknowledgment) {
       if (acknowledgment.batch_sha256 !== batch.fingerprint || acknowledgment.records.length !== batch.records.length || acknowledgment.records.some((row, i) => row.record_sha256 !== batch.fingerprints[i])) fail('resume_batch_mismatch');
     } else {
+      const compressed = gzipSync(Buffer.from(batch.payload, 'utf8'));
       let result;
       for (let attempt = 0; attempt < IMPORT_LIMITS.attempts; attempt++) {
-        const response = await fetchBounded(fetchFn, origin + '/api/journal/import-history', { method: 'POST', headers: { cookie, origin, accept: 'application/json', 'content-type': 'application/json' }, body: batch.payload });
+        const response = await fetchBounded(fetchFn, origin + '/api/journal/import-history', { method: 'POST', headers: { cookie, origin, accept: 'application/json', 'content-type': 'application/json', 'content-encoding': 'gzip' }, body: compressed });
         try {
           result = await limitedJSON(response, 32 * 1024);
           if (!object(result) || !Number.isSafeInteger(result.inserted) || !Number.isSafeInteger(result.skipped) || result.inserted < 0 || result.skipped < 0 || result.inserted + result.skipped !== batch.records.length || !Array.isArray(result.ids) || result.ids.length !== batch.records.length || result.ids.some(id => !hex(id, 16)) || !hex(result.headHash, 64)) fail('invalid_import_acknowledgment');
