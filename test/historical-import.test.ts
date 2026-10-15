@@ -130,7 +130,7 @@ test('hashed provenance detects modification, removal and chronology-key tamperi
 test('schema-1 backup reads without modification; migration adds columns without rewriting entries', () => fixture((j,directory) => {
   const original=j.write({text:'Legacy journal original',actor:'claude',pin:true}); j.checkpoint(); j.close();
   const file=join(directory,'journal.db'); const db=new Database(file);
-  db.exec("DROP INDEX historical_source_identity; DROP INDEX entry_chronology; ALTER TABLE entries DROP COLUMN provenance_json; ALTER TABLE entries DROP COLUMN chronology_key; UPDATE meta SET value='1' WHERE key='schema_version';"); db.close();
+  db.exec("DROP INDEX entry_continuity_seq; DROP INDEX entry_continuity_role; ALTER TABLE entries DROP COLUMN origin_json; ALTER TABLE entries DROP COLUMN continuity_json; DROP INDEX historical_source_identity; DROP INDEX entry_chronology; ALTER TABLE entries DROP COLUMN provenance_json; ALTER TABLE entries DROP COLUMN chronology_key; UPDATE meta SET value='1' WHERE key='schema_version';"); db.close();
   const bytes=()=>createHash('sha256').update(readFileSync(file)).digest('hex'); const before=bytes();
   const old=Journal.openReadOnly(file); assert.deepEqual(old.get(original.id),original); assert.ok(old.verify().ok); assert.equal(old.recent(1).length,0); old.close(); assert.equal(bytes(),before);
   const migrated=Journal.open(file); try {

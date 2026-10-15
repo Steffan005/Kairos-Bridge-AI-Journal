@@ -16,7 +16,9 @@ const DB_NAME = /^(?:auth|control|journal-[a-f0-9]{64})\.db$/;
 const HASH = /^[a-f0-9]{64}$/;
 const digest = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const journalName = (id: string): string => `journal-${digest(id)}.db`;
-const SUPPORTED_JOURNAL_SCHEMAS = new Set([1, SCHEMA_VERSION]);
+// Explicit versions: a future engine version must not silently authorize a new
+// recovery format, and upgrading the engine must keep schema 2 restorable.
+const SUPPORTED_JOURNAL_SCHEMAS = new Set([1, 2, 3]);
 
 type Description = { users: string[]; accounts: Account[]; journals: Array<{ name: string; count: number; head: string }> };
 type FileRecord = { name: string; sha256: string; bytes: number };
@@ -126,7 +128,7 @@ function describe(directory: string): Description {
   return { users, accounts, journals };
 }
 
-/** The manifest records the highest actual format in a possibly mixed 1/2 bundle. */
+/** The manifest records the highest actual format in a possibly mixed 1/2/3 bundle. */
 function journalSchema(directory: string, journals: Description["journals"]): number | undefined {
   let highest: number | undefined;
   for (const journal of journals) {

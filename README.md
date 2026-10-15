@@ -27,14 +27,22 @@ Your AI reads your journal before it talks to you and writes a short note afterw
 |---|---|
 | `journal_wake` | At the start of a conversation. Returns a short briefing: your pinned entries (who you are, what you prefer) plus the most recent notes, capped at about 6,000 characters. |
 | `journal_write` | When it learns something you'd want remembered (a preference, a fact, a decision, a short session summary). It's told never to write secrets, and the server also refuses obvious ones (passwords, API keys, card numbers and similar). |
-| `journal_continue` | When you ask to resume a named project. Returns only entries tagged `project-<slug>`, newest first, with a hard response-size cap. |
-| `journal_search` | When you mention something from the past. Searches by word across every entry. |
+| `journal_continue` | When you ask to resume a named project. Returns a bounded project briefing with source IDs, recorded decisions, explicit open work and addressed handoffs. Use `view: "history"` for original newest-first notes. |
+| `journal_search` | When you mention something from the past. Searches by word across every entry, with an optional exact project filter. Relevance order is separate from chronology. |
 | `journal_verify` | When you ask "is my journal intact?" It re-checks every fingerprint and link. |
 | `journal_export` | When you ask for a backup. Saves JSON or Markdown in a folder you own and never overwrites an existing file. |
 | `journal_pin` / `journal_unpin` | Mark an entry to appear in every briefing, or stop showing it. Nothing gets deleted. |
 | `journal_about` | When you ask who made it, what the license is, or where the source code is. (The same information is available as the MCP resource `kairos-journal://about` and, in HTTP mode, at `GET /about`.) |
 
-Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (who wrote it, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`. For project notes, use a tag such as `project-kitchen`; ask `journal_continue` for `kitchen` or `project-kitchen` to retrieve that exact project tag.
+Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (declared attribution, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`. For project notes, use a tag such as `project-kitchen`; ask `journal_continue` for `kitchen` or `project-kitchen` to retrieve that exact project tag.
+
+### Continuing work with evidence
+
+Continue now selects recorded goals and decisions, explicitly recorded open questions/actions, handoffs addressed to an actor, and recent activity from the exact project. Corrections and resolutions use explicit record IDs; original notes remain in History. Old prose is never automatically promoted into a current task. `journal_wake({project})` uses the same briefing.
+
+An optional `continuity` object records the role, actor, recipient and correction/resolution links. Hosted writes also receive a server-assigned `write_origin`, based on the authenticated OAuth client or owner session. It stays separate from the declared Author label and participates in the new entry's hash. Older entries retain their original hashes and receive no invented origin. Connection evidence does not identify the underlying model or establish the truth of a note. Actor selection routes retrieval; it does not create private access lanes.
+
+See [Continue and origin contract](hosted/CONTINUE.md) for arguments, hash compatibility, limits and acceptance evidence. Some AI apps cache MCP tool definitions; refresh their tool list to expose new optional fields. Ordinary project Continue calls use the new briefing immediately after server deployment.
 
 ---
 
@@ -217,6 +225,8 @@ src/
   tools.ts        the 9 MCP tools, the about resource and the instructions the AI sees
   about.ts        copyright, license, attribution and source location (AGPL notices)
   journal.ts      storage: SQLite schema, hash chain, wake, project continuation, search, verify, export
+  continuity.ts   validated project roles, actor aliases and trusted origin metadata
+  projectBriefing.ts bounded project retrieval with explicit handoff/status links
   canonical.ts    canonical serialization, SHA-256, 25 ms tick
   secrets.ts      best-effort "this looks like a secret" filter
   http.ts         Streamable HTTP transport with bearer token and Host checks

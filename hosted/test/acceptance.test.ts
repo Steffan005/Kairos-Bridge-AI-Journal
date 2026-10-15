@@ -118,7 +118,12 @@ test("private journal preview: real OAuth and two isolated synthetic users", { t
       assert.ok(!(await aClient.listTools()).tools.some(t => t.name === "journal_export"));
       const result = await aClient.callTool({ name: "journal_write", arguments: { text: "SYNTHETIC: Alice kitchen tile is cobalt blue", tags: ["project-kitchen"], actor: "Claude" } });
       assert.ok(!result.isError); const content = result.content as Array<{ text: string }>;
-      aNoteId = JSON.parse(content[0].text).entry.id; assert.ok(aNoteId); await aClient.close();
+      const entry = JSON.parse(content[0].text).entry;
+      aNoteId = entry.id; assert.ok(aNoteId);
+      assert.equal(entry.actor, "claude", "the note retains its declared author");
+      assert.deepEqual(entry.write_origin, { version: 1, channel: "oauth", client_id: client.client_id, provider: null, received_at: entry.write_origin.received_at },
+        "the actual DCR/consent/PKCE grant identifies its client without trusting a claimed provider name");
+      await aClient.close();
       const resumed = await sdk(at.access_token);
       const continuation = await resumed.callTool({ name: "journal_continue", arguments: { project: "kitchen" } });
       assert.match(JSON.stringify(continuation), /cobalt blue/); assert.match(JSON.stringify(continuation), /claude/); assert.match(JSON.stringify(continuation), /2026/);

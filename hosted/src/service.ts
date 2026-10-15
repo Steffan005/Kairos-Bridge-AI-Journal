@@ -17,6 +17,7 @@ import { page } from "./pages.js";
 import { acquireDataLease } from "./dataLease.js";
 import { decodeHistoryImportBody, MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
 import { streamJournalExport } from "./journalExport.js";
+import { oauthWriteOrigin, ownerWriteOrigin } from "./writeOrigin.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
@@ -87,9 +88,10 @@ async function createService(options: ServiceSettings) {
   const { auth, database } = initialized;
   try {
     await migrateAuth(auth, database);
-    // Plugin initialization may still query SQLite; finish it before returning a
-    // service that callers are allowed to close immediately.
-    await auth.$context;
+    // Better Auth returns its initialized context while a cached schema check
+    // can still be querying SQLite. Await that work too before allowing close.
+    const context = await auth.$context;
+    await context.checkSchema?.();
   } catch (error) { database.close(); accounts.close(); releaseLease(); throw error; }
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
   const owner = async (req: http.IncomingMessage) => {
@@ -160,7 +162,8 @@ async function createService(options: ServiceSettings) {
           const current = await verifyGrant(auth, accounts, baseURL, req.headers.authorization);
           const journal = Journal.open(accounts.path(current.userId));
           chmodSync(accounts.path(current.userId), 0o600);
-          const mcp = createJournalServer(journal, { storage: "hosted", readOnly: current.readOnly, defaultActor: "assistant" });
+          const mcp = createJournalServer(journal, { storage: "hosted", readOnly: current.readOnly, defaultActor: "assistant",
+            writeOrigin: oauthWriteOrigin(current.clientId, baseURL) });
           const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
           try { await mcp.connect(transport); await transport.handleRequest(req, res, input); }
           finally { await transport.close(); await mcp.close(); journal.close(); }
@@ -233,7 +236,8 @@ async function createService(options: ServiceSettings) {
             }
             if (path === "/api/journal/notes" && method === "POST") {
               const input = JSON.parse(bytes!.toString());
-              return json(res, 201, journal.write({ text: input.text, tags: input.tags, actor: "You", kind: "note" }));
+              return json(res, 201, journal.write({ text: input.text, tags: input.tags, actor: "You", kind: "note",
+                ...(input.continuity === undefined ? {} : { continuity: input.continuity }), writeOrigin: ownerWriteOrigin() }));
             }
             if (path === "/api/journal/export" && method === "GET") {
               const tmp = mkdtempSync(join(accounts.directory, "export-"));

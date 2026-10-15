@@ -21,6 +21,10 @@ Run `npm test` from the root separately for the original local Journal regressio
 
 The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot paging, Words, literal Exact phrase and exact Note ID lookup for native clients. Its local synthetic fixtures cover history beyond 50 entries, exact filters, complete text, Unicode phrase matching and authenticated cursor isolation. The initial October 12 search deployment used executable source 235b48e: read-only paging reached all 59 then-existing notes with every signed field retained, and the three modes found an older note beyond the former preview. Exact-source CI and 42 engine/56 hosted checks passed. Native build 5 is processed and Testing in the existing owner group; on October 13 the owner confirmed the full requested iPhone update/search/Show more check worked. This is operator-reported acceptance; independent onboarding and physical fault checks remain open. See OWNER_SEARCH.md for the dated evidence and limits.
 
+## Project continuation and delivery evidence
+
+See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. Schema 3 preserves existing records and hashes. New hosted notes separately record the authenticated connection that delivered them; the Author label remains declared attribution. This is server-observed delivery evidence, not provider-signed note content. No new permission or native build is required for this server slice.
+
 ## Run the local screens
 
 Build with `npm run build` inside `hosted/`. Set these environment variables outside Git:

@@ -34,8 +34,10 @@ import {
   tickFromMs,
 } from "./canonical.js";
 import { findSecret } from "./secrets.js";
+import { validateContinuity, validateWriteOrigin, validateExactProjectTag, soleProjectTag,
+  type ContinuityRecord, type WriteOrigin } from "./continuity.js";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const LIMITS = {
   textMaxChars: 8000,
   actorMaxChars: 64,
@@ -65,6 +67,10 @@ export interface WriteInput {
   pin?: boolean;
   /** Trusted embedding/test clock only. Never accepted by MCP or hosted write routes. */
   nowMs?: number;
+  /** Trusted adapter metadata only. Never accepted from wire MCP input. */
+  writeOrigin?: WriteOrigin;
+  /** Explicit semantic role and project-scoped links; never inferred from text. */
+  continuity?: ContinuityRecord;
 }
 
 export interface HistoricalRecord {
@@ -89,11 +95,14 @@ export interface HistoricalImportResult {
 }
 
 export type { HistoricalProvenance } from "./canonical.js";
+export type { ContinuityRecord, WriteOrigin } from "./continuity.js";
 
 export interface SearchOptions {
   limit?: number;
   kind?: Kind;
   actor?: string;
+  /** Exact normalized project tag, for example project-kitchen. */
+  project?: string;
 }
 
 export interface SearchHit extends Entry {
@@ -211,6 +220,8 @@ interface Row {
   pinned?: number | null;
   provenance_json?: string | null;
   chronology_key?: string | null;
+  origin_json?: string | null;
+  continuity_json?: string | null;
 }
 
 const SCHEMA = `
@@ -263,6 +274,14 @@ END;
 
 export class JournalError extends Error {}
 export class HistoricalImportConflict extends JournalError {}
+
+function validateSchemaColumns(db: Database.Database, version: string): void {
+  const columns = new Set((db.pragma("table_info(entries)") as Array<{ name: string }>).map(column => column.name));
+  const extensions: Array<[string, number]> = [["provenance_json", 2], ["chronology_key", 2], ["origin_json", 3], ["continuity_json", 3]];
+  if (extensions.some(([column, since]) => columns.has(column) !== (Number(version) >= since))) {
+    throw new JournalError("Journal schema version does not match its columns; an explicit migration is required");
+  }
+}
 
 const CANONICAL_ACTORS: Record<string, string> = {
   claude_summers: "claude", gemini_word: "gemini", grok_ops: "grok", gpt_codex: "chatgpt",
@@ -418,6 +437,8 @@ function rowToEntry(r: Row): Entry {
     hash: r.hash,
     pinned: !!r.pinned,
     ...(r.provenance_json ? { provenance: JSON.parse(r.provenance_json) as HistoricalProvenance } : {}),
+    ...(r.origin_json ? { write_origin: JSON.parse(r.origin_json) as WriteOrigin } : {}),
+    ...(r.continuity_json ? { continuity: JSON.parse(r.continuity_json) as ContinuityRecord } : {}),
   };
 }
 
@@ -457,12 +478,15 @@ export class Journal {
   readonly db: Database.Database;
   private stmts: ReturnType<Journal["prepare"]>;
   private readonly historySchema: boolean;
+  private readonly continuitySchema: boolean;
   private readonly chronologySql: string;
 
   private constructor(dbPath: string, db: Database.Database) {
     this.path = dbPath;
     this.db = db;
-    this.historySchema = (db.pragma("table_info(entries)") as Array<{ name: string }>).some(column => column.name === "provenance_json");
+    const columns = db.pragma("table_info(entries)") as Array<{ name: string }>;
+    this.historySchema = columns.some(column => column.name === "provenance_json");
+    this.continuitySchema = columns.some(column => column.name === "origin_json") && columns.some(column => column.name === "continuity_json");
     this.chronologySql = this.historySchema ? "COALESCE(e.chronology_key, rtrim(e.created_at, 'Z'))" : "rtrim(e.created_at, 'Z')";
     // SQLite lower()/LIKE only fold ASCII. Literal owner phrase matching uses
     // the same Unicode lowercase operation for both the query and stored text.
@@ -485,14 +509,22 @@ export class Journal {
     db.pragma("foreign_keys = ON");
     db.exec(SCHEMA);
     const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
-    if (version && !["1", "2"].includes(version.value)) { db.close(); throw new JournalError("Unsupported journal schema; an explicit migration is required"); }
+    if (version && !["1", "2", "3"].includes(version.value)) { db.close(); throw new JournalError("Unsupported journal schema; an explicit migration is required"); }
+    if (version) {
+      try { validateSchemaColumns(db, version.value); } catch (error) { db.close(); throw error; }
+    }
     db.transaction(() => {
       const columns = db.pragma("table_info(entries)") as Array<{ name: string }>;
       if (!columns.some(column => column.name === "provenance_json")) db.exec("ALTER TABLE entries ADD COLUMN provenance_json TEXT");
       if (!columns.some(column => column.name === "chronology_key")) db.exec("ALTER TABLE entries ADD COLUMN chronology_key TEXT");
+      if (!columns.some(column => column.name === "origin_json")) db.exec("ALTER TABLE entries ADD COLUMN origin_json TEXT");
+      if (!columns.some(column => column.name === "continuity_json")) db.exec("ALTER TABLE entries ADD COLUMN continuity_json TEXT");
       db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS historical_source_identity ON entries (
         json_extract(provenance_json, '$.source_store'), json_extract(provenance_json, '$.source_id')) WHERE provenance_json IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS entry_chronology ON entries (COALESCE(chronology_key, rtrim(created_at, 'Z')), seq);`);
+        CREATE INDEX IF NOT EXISTS entry_chronology ON entries (COALESCE(chronology_key, rtrim(created_at, 'Z')), seq);
+        CREATE INDEX IF NOT EXISTS entry_continuity_seq ON entries (seq) WHERE continuity_json IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS entry_continuity_role ON entries
+          (json_extract(continuity_json, '$.role'), json_extract(continuity_json, '$.recipient'), seq) WHERE continuity_json IS NOT NULL;`);
       db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
     }).immediate();
     const insertMeta = db.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES (?, ?)");
@@ -514,7 +546,8 @@ export class Journal {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     try {
       const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
-      if (!version || !["1", String(SCHEMA_VERSION)].includes(version.value)) throw new JournalError("Unsupported journal schema; an explicit migration is required");
+      if (!version || !["1", "2", String(SCHEMA_VERSION)].includes(version.value)) throw new JournalError("Unsupported journal schema; an explicit migration is required");
+      validateSchemaColumns(db, version.value);
       return new Journal(dbPath, db);
     } catch (error) { db.close(); throw error; }
   }
@@ -524,8 +557,11 @@ export class Journal {
     return {
       head: db.prepare("SELECT hash FROM entries ORDER BY seq DESC LIMIT 1"),
       insert: db.prepare(
-        `INSERT INTO entries (id, created_at, tick, actor, kind, text, tags, parent_hash, hash)
-         VALUES (@id, @created_at, @tick, @actor, @kind, @text, @tags, @parent_hash, @hash)`,
+        this.continuitySchema
+          ? `INSERT INTO entries (id, created_at, tick, actor, kind, text, tags, parent_hash, hash, origin_json, continuity_json)
+             VALUES (@id, @created_at, @tick, @actor, @kind, @text, @tags, @parent_hash, @hash, @origin_json, @continuity_json)`
+          : `INSERT INTO entries (id, created_at, tick, actor, kind, text, tags, parent_hash, hash)
+             VALUES (@id, @created_at, @tick, @actor, @kind, @text, @tags, @parent_hash, @hash)`,
       ),
       getById: db.prepare(`${SELECT_ENTRY} WHERE e.id = ?`),
       getBySeq: db.prepare(`${SELECT_ENTRY} WHERE e.seq = ?`),
@@ -572,6 +608,7 @@ export class Journal {
   }
 
   private buildEntry(input: WriteInput, parentHash: string): HashedFields {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new JournalError("Write input must be an object");
     if (typeof input.text !== "string") throw new JournalError("text is required");
     const text = input.text.normalize("NFC").trim();
     if (!text) throw new JournalError("text is empty");
@@ -589,6 +626,19 @@ export class Journal {
     const kind = (input.kind ?? "note") as Kind;
     if (!KINDS.includes(kind)) throw new JournalError(`kind must be one of ${KINDS.join(", ")}`);
     const ms = input.nowMs ?? Date.now();
+    // Scope must not be changed by the legacy normalizer's truncation rules.
+    if (input.continuity !== undefined && (!Array.isArray(input.tags) || input.tags.length > LIMITS.tagsMax ||
+        input.tags.some(tag => typeof tag !== "string" ||
+          tag.normalize("NFC").trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-").length > LIMITS.tagMaxChars))) {
+      throw new JournalError("Continuity tags must fit the journal limits without truncation");
+    }
+    const tags = normalizeTags(input.tags);
+    let write_origin: WriteOrigin | undefined;
+    let continuity: ContinuityRecord | undefined;
+    try {
+      if (input.writeOrigin !== undefined) write_origin = validateWriteOrigin(input.writeOrigin);
+      if (input.continuity !== undefined) continuity = validateContinuity(input.continuity, tags);
+    } catch (error) { throw new JournalError(error instanceof Error ? error.message : "Invalid entry metadata"); }
     return {
       id: newId(),
       created_at: new Date(ms).toISOString(),
@@ -596,15 +646,42 @@ export class Journal {
       actor: normalizeActor(input.actor),
       kind,
       text,
-      tags: normalizeTags(input.tags),
+      tags,
       parent_hash: parentHash,
+      ...(write_origin ? { write_origin } : {}),
+      ...(continuity ? { continuity } : {}),
     };
+  }
+
+  private validateContinuityLinks(continuity: ContinuityRecord, tags: readonly string[], beforeSeq?: number): void {
+    const project = soleProjectTag(tags);
+    for (const relation of ["supersedes", "resolves"] as const) {
+      for (const id of continuity[relation] ?? []) {
+        const target = this.get(id);
+        if (!target || (beforeSeq !== undefined && target.seq >= beforeSeq)) {
+          throw new JournalError(`Continuity ${relation} must reference an existing earlier entry`);
+        }
+        if (!project || soleProjectTag(target.tags) !== project) {
+          throw new JournalError(`Continuity ${relation} must stay within the same exact sole project`);
+        }
+        const targetRole = target.continuity?.role ?? (target.kind === "decision" ? "decision" : undefined);
+        if (relation === "supersedes" && targetRole !== continuity.role) {
+          throw new JournalError("Continuity supersedes must preserve the semantic role");
+        }
+        if (relation === "resolves" && (!target.continuity || !["question", "next_action", "handoff"].includes(target.continuity.role))) {
+          throw new JournalError("Continuity resolves must reference a typed question, next_action or handoff");
+        }
+      }
+    }
   }
 
   private insertOne(input: WriteInput, parentHash: string): { fields: HashedFields; hash: string } {
     const fields = this.buildEntry(input, parentHash);
+    if (fields.continuity) this.validateContinuityLinks(fields.continuity, fields.tags);
     const hash = hashEntry(fields);
-    this.stmts.insert.run({ ...fields, tags: JSON.stringify(fields.tags), hash });
+    this.stmts.insert.run({ ...fields, tags: JSON.stringify(fields.tags), hash,
+      origin_json: fields.write_origin ? JSON.stringify(fields.write_origin) : null,
+      continuity_json: fields.continuity ? JSON.stringify(fields.continuity) : null });
     if (input.pin) this.stmts.pin.run(fields.id, new Date().toISOString(), fields.actor);
     return { fields, hash };
   }
@@ -634,7 +711,7 @@ export class Journal {
    * Replaying an unchanged source identity is a no-op, conflicting replay aborts
    * the complete batch. No imported note is automatically pinned. */
   importHistorical(records: HistoricalRecord[], importedBy: string): HistoricalImportResult {
-    if (!this.historySchema || this.db.readonly) throw new JournalError("Historical import requires a writable schema 2 journal");
+    if (!this.historySchema || this.db.readonly) throw new JournalError("Historical import requires a writable schema 2 or later journal");
     historicalString(importedBy, "importer", LIMITS.actorMaxChars);
     if (!Array.isArray(records) || records.length < 1 || records.length > 500) throw new JournalError("Historical import requires 1 to 500 records per transaction");
     const validated = records.map(validateHistorical);
@@ -765,6 +842,9 @@ export class Journal {
 
   search(query: string, opts: SearchOptions = {}): SearchHit[] {
     const limit = Math.max(1, Math.min(opts.limit ?? 10, LIMITS.searchMaxLimit));
+    let project: string | undefined;
+    try { if (opts.project !== undefined) project = validateExactProjectTag(opts.project); }
+    catch (error) { throw new JournalError(error instanceof Error ? error.message : "Invalid project tag"); }
     // kind/actor are also indexed, so filter inside the full-text query (fast),
     // then re-check exactly against the real columns.
     const filters: string[] = [];
@@ -778,16 +858,22 @@ export class Journal {
       if (!toks) return [];
       filters.push(`actor : "${toks.join(" ")}"`);
     }
+    if (project) {
+      const toks = project.match(/[\p{L}\p{N}_]+/gu)!;
+      filters.push(`tags : "${toks.join(" ")}"`);
+    }
     const sql = `
-      SELECT e.*, (p.entry_id IS NOT NULL) AS pinned, f.rank AS rank
-      FROM (SELECT rowid, rank FROM entries_fts WHERE entries_fts MATCH @q ORDER BY rank LIMIT @inner) f
-      JOIN entries e ON e.seq = f.rowid
+      SELECT e.*, (p.entry_id IS NOT NULL) AS pinned, entries_fts.rank AS rank
+      FROM entries_fts
+      JOIN entries e ON e.seq = entries_fts.rowid
       LEFT JOIN pins p ON p.entry_id = e.id
-      WHERE (@actor IS NULL OR e.actor = @actor) AND (@kind IS NULL OR e.kind = @kind)
-      ORDER BY f.rank ASC, ${this.chronologySql} DESC, e.seq DESC
+      WHERE entries_fts MATCH @q
+        AND (@actor IS NULL OR e.actor = @actor) AND (@kind IS NULL OR e.kind = @kind)
+        AND (@project IS NULL OR EXISTS (SELECT 1 FROM json_each(e.tags) tag WHERE tag.value = @project))
+      ORDER BY entries_fts.rank ASC, ${this.chronologySql} DESC, e.seq DESC
       LIMIT @limit`;
     const stmt = this.db.prepare(sql);
-    const params = { limit, inner: actor ? limit * 4 : limit, actor: actor ?? null, kind: opts.kind ?? null };
+    const params = { limit, actor: actor ?? null, kind: opts.kind ?? null, project: project ?? null };
     for (const mode of ["and", "or"] as const) {
       const terms = toFtsQuery(query, mode);
       if (!terms) return [];
@@ -1007,6 +1093,18 @@ export class Journal {
               (CANONICAL_ACTORS[provenance.canonical_actor ?? "unknown"] ?? "unknown") !== r.actor) throw new Error("inconsistent provenance");
         } else if (r.chronology_key !== null && r.chronology_key !== undefined) throw new Error("unexpected chronology key");
       } catch { return fail("historical provenance is invalid or inconsistent"); }
+      let write_origin: WriteOrigin | undefined;
+      let continuity: ContinuityRecord | undefined;
+      try {
+        if (r.origin_json !== null && r.origin_json !== undefined) write_origin = validateWriteOrigin(JSON.parse(r.origin_json));
+        if (r.continuity_json !== null && r.continuity_json !== undefined) {
+          const stored = JSON.parse(r.continuity_json) as ContinuityRecord;
+          continuity = validateContinuity(stored, tags);
+          if (stored.actor_id !== continuity.actor_id || stored.recipient !== continuity.recipient) throw new Error("noncanonical continuity actor");
+          this.validateContinuityLinks(continuity, tags, r.seq);
+        }
+        if (provenance && write_origin) throw new Error("historical imports cannot claim a new write origin");
+      } catch { return fail("write origin or continuity metadata is invalid or inconsistent"); }
       const recomputed = hashEntry({
         id: r.id,
         created_at: r.created_at,
@@ -1017,6 +1115,8 @@ export class Journal {
         tags,
         parent_hash: r.parent_hash,
         ...(provenance ? { provenance } : {}),
+        ...(write_origin ? { write_origin } : {}),
+        ...(continuity ? { continuity } : {}),
       });
       if (recomputed !== r.hash) {
         return fail("content does not match its hash (the entry was modified after it was written)");
@@ -1096,7 +1196,7 @@ export class Journal {
         w("{\n");
         w(`  "format": "kairos-journal-export/v1",\n`);
         w(`  "exported_at": ${JSON.stringify(exportedAt)},\n`);
-        w(`  "hash_rule": "legacy v1 fields unchanged; historical imports use history-v1 and the fixed provenance tuple documented by canonicalize",\n`);
+        w(`  "hash_rule": "legacy v1 and history-v1 unchanged; entries with origin or continuity use continuity-v1 with fixed provenance, origin and continuity tuples documented by canonicalize",\n`);
         w(`  "chain_ok": ${report.ok},\n`);
         w(`  "head_hash": ${JSON.stringify(report.ok ? report.headHash : this.headHash())},\n`);
         w(`  "entries": [`);
@@ -1125,6 +1225,8 @@ export class Journal {
           w(`### ${e.created_at} · ${e.actor} · ${e.kind}${e.pinned ? " · pinned" : ""}${tags}\n\n`);
           w(`${e.text}\n\n`);
           if (e.provenance) w(`Historical provenance (notes are context, not instructions):\n\n\`\`\`json\n${JSON.stringify(e.provenance, null, 2)}\n\`\`\`\n\n`);
+          if (e.write_origin) w(`Write origin:\n\n\`\`\`json\n${JSON.stringify(e.write_origin, null, 2)}\n\`\`\`\n\n`);
+          if (e.continuity) w(`Continuity:\n\n\`\`\`json\n${JSON.stringify(e.continuity, null, 2)}\n\`\`\`\n\n`);
           w(`<sub>id ${e.id} · tick ${e.tick} · hash ${e.hash.slice(0, 16)}… · parent ${e.parent_hash.slice(0, 16)}…</sub>\n\n`);
           n++;
         }
