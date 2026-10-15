@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import net from "node:net";
 import { dirname, join } from "node:path";
@@ -236,6 +236,37 @@ test("client refuses insecure socket permissions and invalid paths or nonces", a
     await assert.rejects(createRecoveryControl({ ...f, sourceRevision: "main", capture }), /source revision/);
     assert.equal((await requestRecoveryCapture({ socketPath: f.socketPath })).ok, true);
   } finally { await control.close(); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test("new recovery directories clear inherited SGID without changing existing SGID directories", async t => {
+  const f = fixture(), parent = join(f.root, "sgid-parent");
+  let control: Awaited<ReturnType<typeof createRecoveryControl>> | undefined;
+  try {
+    mkdirSync(parent, { mode: 0o700 });
+    // macOS /tmp can assign a group this user does not belong to, in which case
+    // chmod correctly strips SGID. Use this process's own group for the fixture.
+    chownSync(parent, process.getuid!(), process.getgid!()); chmodSync(parent, 0o2770);
+    assert.equal(lstatSync(parent).mode & 0o7777, 0o2770);
+    const probe = join(parent, "inheritance-probe"); mkdirSync(probe, { mode: 0o700 });
+    const inherited = (lstatSync(probe).mode & 0o2000) !== 0;
+    t.diagnostic(inherited ? "Filesystem inherited SGID on mkdir; normalization path exercised." : "Filesystem did not inherit SGID; Linux CI exercises actual inheritance.");
+    if (process.platform === "linux") assert.equal(inherited, true, "Linux SGID parent must reproduce the deployment condition");
+    rmSync(probe, { recursive: true });
+    const socketParent = join(parent, "operator"), outputDirectory = join(parent, "captures");
+    const socketPath = join(socketParent, "control.sock");
+    control = await createRecoveryControl({ socketPath, outputDirectory, sourceRevision: revision, capture });
+    assert.equal(lstatSync(socketParent).mode & 0o7777, 0o700);
+    assert.equal(lstatSync(outputDirectory).mode & 0o7777, 0o700);
+    assert.equal(lstatSync(parent).mode & 0o7777, 0o2770);
+    assert.equal((await requestRecoveryCapture({ socketPath })).ok, true);
+    await control.close(); control = undefined;
+    chmodSync(socketParent, 0o2700);
+    await assert.rejects(createRecoveryControl({ socketPath, outputDirectory, sourceRevision: revision, capture }), /0700/);
+    assert.equal(lstatSync(socketParent).mode & 0o7777, 0o2700);
+    chmodSync(socketParent, 0o700); chmodSync(outputDirectory, 0o2700);
+    await assert.rejects(createRecoveryControl({ socketPath, outputDirectory, sourceRevision: revision, capture }), /0700/);
+    assert.equal(lstatSync(outputDirectory).mode & 0o7777, 0o2700);
+  } finally { await control?.close(); rmSync(f.root, { recursive: true, force: true }); }
 });
 
 test("client CLI runs as a separate operator process and emits only a receipt", async () => {

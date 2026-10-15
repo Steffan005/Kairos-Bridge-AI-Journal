@@ -2,7 +2,7 @@
 // Copyright (C) 2026  Steffan Douglas Haskins
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, closeSync, constants, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync } from "node:fs";
 import net from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { BackupManifest } from "./recovery.js";
@@ -33,8 +33,20 @@ function privateDirectory(path: string, create: boolean): string {
   absolutePath(path);
   if (typeof process.getuid !== "function") throw new Error("Recovery control requires Unix filesystem permissions");
   if (create) {
-    try { mkdirSync(path, { mode: 0o700 }); }
+    let created = false;
+    try { mkdirSync(path, { mode: 0o700 }); created = true; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    if (created) {
+      // Linux may inherit SGID from the parent despite mkdir's requested mode.
+      // Normalize only a directory this invocation created. Never repair an
+      // existing operator directory or follow a replacement symbolic link.
+      const fd = openSync(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      try {
+        const stat = fstatSync(fd);
+        if (!stat.isDirectory() || stat.uid !== process.getuid()) throw new Error("New recovery directory owner changed");
+        fchmodSync(fd, 0o700);
+      } finally { closeSync(fd); }
+    }
   }
   const stat = lstatSync(path);
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o7777) !== 0o700) {

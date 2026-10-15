@@ -44,7 +44,7 @@ test("age vault synthetic acceptance", async t => {
     await t.test("pack and open round trip with private permissions and separate current witness", () => {
       okay(pack());
       assert.deepEqual(readdirSync(vault).sort(), ["archive.tar.gz.age", "capture-receipt.json"]);
-      assert.equal(statSync(vault).mode & 0o777, 0o700);
+      assert.equal(statSync(vault).mode & 0o7777, 0o700);
       for (const name of readdirSync(vault)) assert.equal(statSync(join(vault, name)).mode & 0o777, 0o600);
       const receipt = JSON.parse(readFileSync(receiptPath));
       assert.equal(receipt.archive_sha256, sha(readFileSync(archive)));
@@ -54,14 +54,40 @@ test("age vault synthetic acceptance", async t => {
       assert.equal(JSON.stringify(receipt).includes("synthetic-user"), false);
       const output = join(root, "opened"); okay(unpack(output));
       for (const [name, bytes] of data) { assert.deepEqual(readFileSync(join(output, "backup", name)), bytes); assert.equal(statSync(join(output, "backup", name)).mode & 0o777, 0o600); }
-      assert.equal(statSync(output).mode & 0o777, 0o700);
-      assert.equal(statSync(join(output, "backup")).mode & 0o777, 0o700);
+      assert.equal(statSync(output).mode & 0o7777, 0o700);
+      assert.equal(statSync(join(output, "backup")).mode & 0o7777, 0o700);
       const opened = JSON.parse(readFileSync(join(output, "vault-open-receipt.json")));
       assert.equal(opened.selected_latest_witness_sha256, latestHash);
       assert.equal(opened.restore_required, true);
       const prior = readFileSync(archive);
       assert.notEqual(pack().status, 0); assert.deepEqual(readFileSync(archive), prior);
       assert.notEqual(unpack(output).status, 0); assert.deepEqual(readFileSync(join(output, "backup/auth.db")), data.get("auth.db"));
+    });
+    await t.test("new vault and unpack directories clear inherited setgid before writing", subtest => {
+      const parent = join(root, "setgid-parent"); mkdirSync(parent, { mode: 0o700 });
+      try { chmodSync(parent, 0o2700); }
+      catch { subtest.skip("This filesystem does not permit a setgid test directory"); return; }
+      const probe = join(parent, "inheritance-probe"); mkdirSync(probe, { mode: 0o700 });
+      const inherited = (statSync(probe).mode & 0o2000) !== 0; rmSync(probe, { recursive: true });
+      if (!inherited) { subtest.skip("This filesystem does not inherit directory setgid"); return; }
+      const packed = join(parent, "new-vault"); okay(pack(packed));
+      assert.equal(statSync(packed).mode & 0o7777, 0o700);
+      assert.equal(statSync(parent).mode & 0o7777, 0o2700, "Existing parent permissions must stay unchanged");
+      const opened = join(parent, "new-opened");
+      okay(unpack(opened, { archive: join(packed, "archive.tar.gz.age"), receipt: join(packed, "capture-receipt.json") }));
+      assert.equal(statSync(opened).mode & 0o7777, 0o700);
+      assert.equal(statSync(join(opened, "backup")).mode & 0o7777, 0o700);
+      assert.equal(statSync(parent).mode & 0o7777, 0o2700);
+    });
+    await t.test("existing output permissions and contents remain unchanged when refused", () => {
+      const existing = join(root, "existing-output"); mkdirSync(existing, { mode: 0o700 }); chmodSync(existing, 0o770);
+      const marker = join(existing, "operator-owned.txt"); writeFileSync(marker, "synthetic operator-owned output", { mode: 0o600 });
+      for (const invoke of [() => pack(existing), () => unpack(existing)]) {
+        assert.notEqual(invoke().status, 0);
+        assert.equal(statSync(existing).mode & 0o7777, 0o770);
+        assert.deepEqual(readdirSync(existing), ["operator-owned.txt"]);
+        assert.equal(readFileSync(marker, "utf8"), "synthetic operator-owned output");
+      }
     });
     await t.test("missing or wrong private identity never retains plaintext", () => {
       for (const [name, key] of [["missing-key", join(root, "absent.key")], ["wrong-key", wrongIdentity]]) {

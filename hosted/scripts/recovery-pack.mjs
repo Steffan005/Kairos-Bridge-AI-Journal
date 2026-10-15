@@ -4,7 +4,7 @@
 // Encrypt a stopped, already captured bundle. This does not capture live SQLite.
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { constants, closeSync, createReadStream, createWriteStream, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { constants, closeSync, createReadStream, createWriteStream, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 
@@ -101,6 +101,15 @@ try {
   if (rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) fail("Keep the vault outside the capture directory.");
   const before = await inspect(root);
   try { mkdirSync(output, { mode: 0o700 }); reserved = true; } catch { fail("Vault output must be a new directory; overwrites are refused."); }
+  // A setgid parent can make mkdir(0700) create mode 02700. Normalize only
+  // the directory this invocation just reserved, before writing any bytes.
+  const outputFd = openSync(output, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(outputFd);
+    if (!stat.isDirectory() || stat.uid !== process.getuid()) fail("The new vault directory must belong to this Unix user.");
+    fchmodSync(outputFd, 0o700);
+    if ((fstatSync(outputFd).mode & 0o7777) !== 0o700) fail("Could not make the new vault directory private.");
+  } finally { closeSync(outputFd); }
   const archive = join(output, "archive.tar.gz.age");
   const fd = openSync(archive, "wx", 0o600), sink = createWriteStream(archive, { fd, autoClose: true });
   const encoder = spawn(age, ["--encrypt", "--recipient", recipient], { stdio: ["pipe", "pipe", "pipe"] });

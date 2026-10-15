@@ -71,6 +71,20 @@ def private_json(path, value):
         stream.flush()
         os.fsync(stream.fileno())
 
+def normalize_new_directory(path):
+    # Call only after this invocation's exclusive mkdir. Clear inherited setgid
+    # on a descriptor without ever chmod'ing an existing operator directory.
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            fail("The new output directory must belong to this Unix user.")
+        os.fchmod(descriptor, 0o700)
+        if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o700:
+            fail("Could not make the new output directory private.")
+    finally:
+        os.close(descriptor)
+
 def main():
     if len(sys.argv) != 7:
         fail("Usage: AGE_BIN=/absolute/age python3 recovery-unpack.py ABS_ARCHIVE ABS_TRUSTED_CAPTURE_RECEIPT ABS_PRIVATE_IDENTITY ABS_NEW_OUTPUT_DIR ABS_LATEST_WITNESS TRUSTED_LATEST_WITNESS_SHA256")
@@ -121,7 +135,9 @@ def main():
     for name in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(name, interrupted)
     try:
+        normalize_new_directory(output)
         (output / "backup").mkdir(mode=0o700)
+        normalize_new_directory(output / "backup")
         child = subprocess.Popen([str(age), "--decrypt", "--identity", str(identity), str(archive)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         seen = set()
         total = 0
