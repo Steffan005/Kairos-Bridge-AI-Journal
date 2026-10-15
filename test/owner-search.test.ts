@@ -114,7 +114,7 @@ test("cursor context rejects a changed query, mode, filter, journal or invalid b
     assert.throws(() => j.searchPage("violet", opts as OwnerSearchOptions), /no longer matches/);
   }
   assert.throws(() => j.searchPage("words", { cursor, project: "project-kitchen" }), /no longer matches/);
-  for (const change of [{ journal: "another" }, { before: 0 }, { snapshot: 31 }, { matched_mode: "history" }, { version: 2 }]) {
+  for (const change of [{ journal: "another" }, { before: 0 }, { snapshot: 31 }, { matched_mode: "history" }, { version: 1 }]) {
     assert.throws(() => j.searchPage("violet", { cursor: { ...cursor, ...change } as OwnerSearchCursor, project: "project-kitchen" }), /no longer matches/);
   }
   fixture(other => {

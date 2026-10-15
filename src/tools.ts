@@ -68,6 +68,18 @@ function brief(e: Entry, maxText = 2000) {
     pinned: e.pinned,
     text: e.text.length > maxText ? e.text.slice(0, maxText - 1) + "…" : e.text,
     hash: e.hash,
+    ...(e.provenance ? { provenance: {
+      version: e.provenance.version,
+      source_store: e.provenance.source_store,
+      source_id: e.provenance.source_id,
+      original_timestamp: e.provenance.original_timestamp,
+      original_actor: e.provenance.original_actor,
+      canonical_actor: e.provenance.canonical_actor,
+      timezone: e.provenance.timezone,
+      source_file_sha256: e.provenance.source_file_sha256,
+      imported_at: e.provenance.imported_at,
+      imported_by: e.provenance.imported_by,
+    }, historical_context: true, provenance_details: "Auxiliary source metadata is available in the owner's complete export." } : {}),
   };
 }
 

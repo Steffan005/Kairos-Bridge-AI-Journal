@@ -16,6 +16,7 @@ const DB_NAME = /^(?:auth|control|journal-[a-f0-9]{64})\.db$/;
 const HASH = /^[a-f0-9]{64}$/;
 const digest = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const journalName = (id: string): string => `journal-${digest(id)}.db`;
+const SUPPORTED_JOURNAL_SCHEMAS = new Set([1, SCHEMA_VERSION]);
 
 type Description = { users: string[]; accounts: Account[]; journals: Array<{ name: string; count: number; head: string }> };
 type FileRecord = { name: string; sha256: string; bytes: number };
@@ -125,6 +126,21 @@ function describe(directory: string): Description {
   return { users, accounts, journals };
 }
 
+/** The manifest records the highest actual format in a possibly mixed 1/2 bundle. */
+function journalSchema(directory: string, journals: Description["journals"]): number | undefined {
+  let highest: number | undefined;
+  for (const journal of journals) {
+    const db = readDB(join(directory, journal.name));
+    try {
+      const value = (db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined)?.value;
+      const schema = Number(value);
+      if (String(schema) !== value || !SUPPORTED_JOURNAL_SCHEMAS.has(schema)) fail("Unsupported journal schema");
+      highest = Math.max(highest ?? schema, schema);
+    } finally { db.close(); }
+  }
+  return highest;
+}
+
 /** The service must be stopped. All participating writers obey the same exclusive lease. */
 export async function captureBackup(directory: string, output: string, sourceRevision: string): Promise<BackupManifest> {
   const source = checkDirectory(directory), target = destination(output, source);
@@ -149,7 +165,7 @@ export async function captureBackup(directory: string, output: string, sourceRev
     if (JSON.stringify(captured) !== JSON.stringify(original) || JSON.stringify(describe(source)) !== JSON.stringify(original)) fail("Data changed during backup; refusing to publish a mixed capture");
     const files = names.sort().map(name => fileDigest(join(work, name)));
     const manifest: BackupManifest = { format: "kairos-offline-backup-v1", id: randomUUID(), captured_at: new Date().toISOString(), source_revision: sourceRevision,
-      auth_schema: AUTH_SCHEMA, journal_schema: SCHEMA_VERSION, ...captured, files };
+      auth_schema: AUTH_SCHEMA, journal_schema: journalSchema(work, captured.journals) ?? SCHEMA_VERSION, ...captured, files };
     writeFileSync(join(work, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     syncFile(join(work, "manifest.json")); syncDirectory(work);
     if (existsSync(target)) fail("Backup destination appeared; refusing to replace it");
@@ -181,7 +197,7 @@ export function restoreBackup(options: { backup: string; output: string; witness
   if (witness.format !== "kairos-deletion-witness-v1") fail("Unsupported deletion witness");
   checkAccounts(witness.accounts); checkUsers(witness.users);
   const manifest = JSON.parse(fileBytes(join(backup, "manifest.json")).toString()) as BackupManifest;
-  if (manifest.format !== "kairos-offline-backup-v1" || manifest.auth_schema !== AUTH_SCHEMA || manifest.journal_schema !== SCHEMA_VERSION) fail("Unsupported backup schema");
+  if (manifest.format !== "kairos-offline-backup-v1" || manifest.auth_schema !== AUTH_SCHEMA || !SUPPORTED_JOURNAL_SCHEMAS.has(manifest.journal_schema)) fail("Unsupported backup schema");
   const captured = Date.parse(manifest.captured_at), witnessed = Date.parse(witness.captured_at);
   if (!Number.isFinite(captured) || !Number.isFinite(witnessed) || witnessed < captured) fail("The deletion witness predates this backup");
   if (!Array.isArray(manifest.files) || !manifest.files.every(f => DB_NAME.test(f.name) && HASH.test(f.sha256) && Number.isSafeInteger(f.bytes) && f.bytes > 0)) fail("Invalid backup file inventory");
@@ -193,6 +209,8 @@ export function restoreBackup(options: { backup: string; output: string; witness
     if (measured.bytes !== f.bytes || measured.sha256 !== f.sha256) fail("Backup file integrity failed");
   }
   const original = describe(backup);
+  const actualSchema = journalSchema(backup, original.journals);
+  if (actualSchema !== undefined && actualSchema !== manifest.journal_schema) fail("Manifest disagrees with captured journal schemas");
   if (JSON.stringify(original) !== JSON.stringify({ users: manifest.users, accounts: manifest.accounts, journals: manifest.journals })) fail("Manifest disagrees with captured state");
   if (JSON.stringify(original.users) !== JSON.stringify(witness.users)) fail("Accounts changed since backup; an explicit account-recovery plan is required");
   const current = new Map(witness.accounts.map(a => [a.user_id, a]));

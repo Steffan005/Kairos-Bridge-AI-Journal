@@ -3,27 +3,29 @@
 // Kairos Journal, created by Steffan Douglas Haskins. See ../../NOTICE.
 import http from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { oauthProviderAuthServerMetadata, verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { fromNodeHeaders } from "better-auth/node";
-import { Journal, JournalError, type OwnerSearchCursor, type OwnerSearchMode } from "../../src/journal.js";
+import { Journal, JournalError, HistoricalImportConflict, compareEntryChronology, type OwnerSearchCursor, type OwnerSearchMode } from "../../src/journal.js";
 import { createJournalServer } from "../../src/tools.js";
 import { ATTRIBUTION, COPYRIGHT, LICENSE_SPDX, LICENSE_URL } from "../../src/about.js";
 import { Accounts } from "./accounts.js";
 import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
 import { acquireDataLease } from "./dataLease.js";
+import { MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
+import { streamJournalExport } from "./journalExport.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
 const MAX_BODY = 64 * 1024;
-async function body(req: http.IncomingMessage): Promise<Buffer> {
+async function body(req: http.IncomingMessage, max = MAX_BODY): Promise<Buffer> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of req) {
     const b = Buffer.from(chunk); size += b.length;
-    if (size > MAX_BODY) throw new AccessError(413, "Request is too large");
+    if (size > max) throw new AccessError(413, "Request is too large");
     chunks.push(b);
   }
   return Buffer.concat(chunks);
@@ -188,7 +190,7 @@ async function createService(options: ServiceSettings) {
       if (path.startsWith("/api/journal")) {
         const userId = await owner(req);
         if (!["GET", "HEAD"].includes(method) && req.headers.origin !== baseURL) throw new AccessError(403, "Open Kairos to change your journal");
-        const bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
+        const bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req, path === "/api/journal/import-history" && method === "POST" ? MAX_HISTORY_IMPORT_BODY : MAX_BODY);
         return await accounts.locked(userId, async () => {
           if (path === "/api/journal/disconnect" && method === "POST") { await disconnect(auth, accounts, userId); return json(res, 200, { disconnected: true }); }
           if (path === "/api/journal" && method === "DELETE") { await disconnect(auth, accounts, userId); accounts.delete(userId); return json(res, 200, { deleted: true, backups: backupNotice }); }
@@ -201,6 +203,15 @@ async function createService(options: ServiceSettings) {
           const journal = Journal.open(accounts.path(userId));
           chmodSync(accounts.path(userId), 0o600);
           try {
+            if (path === "/api/journal/import-history" && method === "POST") {
+              const records = parseHistoryImport(JSON.parse(bytes!.toString()));
+              try { return json(res, 200, journal.importHistorical(records, "owner")); }
+              catch (error) {
+                if (error instanceof HistoricalImportConflict) throw new AccessError(409, "Historical import conflicts with an existing source record. No records in this batch were saved.");
+                if (error instanceof JournalError) throw new AccessError(400, "Historical import could not be accepted. Check the record fields, dates and text. No records in this batch were saved.");
+                throw error;
+              }
+            }
             if (path === "/api/journal/search" && method === "GET") {
               const suppliedLimit = target.searchParams.get("limit");
               if (suppliedLimit !== null && !/^[0-9]{1,2}$/.test(suppliedLimit)) throw new AccessError(400, "Page size must be between 1 and 50");
@@ -217,7 +228,7 @@ async function createService(options: ServiceSettings) {
             if (path === "/api/journal" && method === "GET") {
               const { adapter } = await auth.$context;
               const consents = await adapter.findMany<{ clientId: string; scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: userId }] });
-              const entries = [...new Map([...journal.pinned(), ...journal.recent(50)].map(entry => [entry.id, entry])).values()].sort((a, b) => b.seq - a.seq).slice(0, 50);
+              const entries = [...new Map([...journal.pinned(), ...journal.recent(50)].map(entry => [entry.id, entry])).values()].sort((a, b) => compareEntryChronology(b, a)).slice(0, 50);
               return json(res, 200, { deleted: false, entries, connections: consents.map(c => ({ clientId: c.clientId, scopes: c.scopes })), count: journal.count() });
             }
             if (path === "/api/journal/notes" && method === "POST") {
@@ -228,8 +239,8 @@ async function createService(options: ServiceSettings) {
               const tmp = mkdtempSync(join(accounts.directory, "export-"));
               try {
                 const out = join(tmp, "journal.json"); journal.exportTo(out, "json");
-                res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": 'attachment; filename="kairos-journal.json"' });
-                return res.end(readFileSync(out));
+                await streamJournalExport(res, out);
+                return;
               } finally { rmSync(tmp, { recursive: true, force: true }); }
             }
             throw new AccessError(404, "This journal action is not available");
