@@ -20,3 +20,14 @@ jobs:
         working-directory: hosted
       - run: npm test
         working-directory: hosted
+      - name: Install pinned age for recovery vault acceptance
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/age.tar.gz" https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP"
+      - name: Encrypted recovery vault acceptance
+        run: npm run test:vault
+        working-directory: hosted
+        env:
+          AGE_BIN: ${{ runner.temp }}/age/age
+          AGE_KEYGEN_BIN: ${{ runner.temp }}/age/age-keygen

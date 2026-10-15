@@ -15,6 +15,8 @@ import { Accounts } from "./accounts.js";
 import { AccessError, disconnect, makeAuth, migrateAuth, verifyGrant } from "./auth.js";
 import { page } from "./pages.js";
 import { acquireDataLease } from "./dataLease.js";
+import { RecoveryGate } from "./recoveryGate.js";
+import { captureRecoveryWhileLeased, type RecoveryCaptureOptions } from "./recovery.js";
 import { decodeHistoryImportBody, MAX_HISTORY_IMPORT_BODY, parseHistoryImport } from "./historyImport.js";
 import { streamJournalExport } from "./journalExport.js";
 import { oauthWriteOrigin, ownerWriteOrigin } from "./writeOrigin.js";
@@ -76,14 +78,15 @@ async function createService(options: ServiceSettings) {
   const url = new URL(options.baseURL), baseURL = url.origin;
   const staging = options.kind === "hosted-invited-staging";
   const backupNotice = staging
-    ? "Hosting disk snapshots may retain deleted data; invited development staging"
+    ? "Hosting disk snapshots and protected operator recovery copies may retain deleted data; invited development staging"
     : "No automatic backups in this preview";
   const releaseLease = acquireDataLease(options.directory);
+  const recoveryGate = new RecoveryGate();
   let accounts: Accounts;
   try { accounts = new Accounts(options.directory); }
   catch (error) { releaseLease(); throw error; }
   let initialized: ReturnType<typeof makeAuth>;
-  try { initialized = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge }); }
+  try { initialized = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge, backgroundTaskHandler: recoveryGate.track }); }
   catch (error) { accounts.close(); releaseLease(); throw error; }
   const { auth, database } = initialized;
   try {
@@ -99,7 +102,7 @@ async function createService(options: ServiceSettings) {
     if (!session) throw new AccessError(401, "Please sign in to Kairos");
     return session.user.id;
   };
-  const server = http.createServer(async (req, res) => {
+  const handleRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     res.setHeader("cache-control", "no-store");
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("referrer-policy", "no-referrer");
@@ -260,12 +263,35 @@ async function createService(options: ServiceSettings) {
       // Never send database paths, token details, or stack traces to the client.
       json(res, 500, { error: "Kairos could not finish that request. Please try again." });
     }
+  };
+  const server = http.createServer(async (req, res) => {
+    // Health probes touch no database and continue while recovery drains/copies.
+    if (req.method === "GET" && (req.url ?? "").split("?", 1)[0] === "/healthz") return handleRequest(req, res);
+    const release = recoveryGate.enter();
+    if (!release) {
+      res.setHeader("cache-control", "no-store");
+      res.setHeader("retry-after", "5");
+      return json(res, 503, { error: "Kairos is briefly busy. Please try again." });
+    }
+    // Await the whole handler, including returned forward()/export promises.
+    // Releasing on response 'finish' could race request cleanup and SQLite work.
+    try { await handleRequest(req, res); }
+    finally { release(); }
   });
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
   return {
     server, auth, accounts,
+    captureRecovery: async (capture: RecoveryCaptureOptions) => {
+      const started = performance.now();
+      return recoveryGate.exclusive(async () => {
+        const drained = performance.now();
+        const result = await captureRecoveryWhileLeased(options.directory, capture, releaseLease);
+        const finished = performance.now();
+        return { ...result, drainMs: Math.round(drained - started), captureMs: Math.round(finished - drained), pausedMs: Math.round(finished - started) };
+      });
+    },
     listen: () => new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.listenPort, options.listenHost, () => { server.off("error", reject); resolve(); }); }),
-    close: async () => { if (server.listening) await new Promise<void>((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeIdleConnections(); }); database.close(); accounts.close(); releaseLease(); },
+    close: () => recoveryGate.close(async () => { if (server.listening) await new Promise<void>((resolve, reject) => { server.close(e => e ? reject(e) : resolve()); server.closeIdleConnections(); }); database.close(); accounts.close(); releaseLease(); }),
   };
 }

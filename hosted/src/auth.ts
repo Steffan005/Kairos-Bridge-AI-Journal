@@ -28,6 +28,8 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
   staging?: boolean; trustedEdge?: "render-cloudflare";
   /** In-process fixture transport only; no service route or environment setting exposes this override. */
   metadataFetcher?: typeof fetchClientMetadataResource;
+  /** Track library background work so maintenance can wait for its completion. */
+  backgroundTaskHandler?: (promise: Promise<unknown>) => void;
 } = {}) {
   if (secret.length < 32) throw new Error("Provide a random authentication secret of at least 32 characters");
   const database = new Database(join(accounts.directory, "auth.db"));
@@ -45,9 +47,10 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
     // selected only by the Render staging entry point; generic/local hosts keep
     // Better Auth's conservative defaults. Missing/invalid headers fail to the
     // library's shared bucket; rate limiting is never disabled.
-    ...(options.trustedEdge === "render-cloudflare"
-      ? { advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } } }
-      : {}),
+    advanced: {
+      ...(options.trustedEdge === "render-cloudflare" ? { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } } : {}),
+      ...(options.backgroundTaskHandler ? { backgroundTasks: { handler: options.backgroundTaskHandler } } : {}),
+    },
     plugins: [
       jwt({ jwt: { issuer: `${baseURL}/api/auth` } }),
       oauthProvider({

@@ -5,8 +5,9 @@ import Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { Worker } from "node:worker_threads";
 import { Journal, SCHEMA_VERSION } from "../../src/journal.js";
-import { acquireDataLease } from "./dataLease.js";
+import { acquireDataLease, assertHeldDataLease, type DataLease } from "./dataLease.js";
 import type { Account } from "./accounts.js";
 
 const AUTH_SCHEMA = "better-auth-1.7.7";
@@ -35,6 +36,8 @@ export type RestoreReceipt = {
   accounts: number; journals: number; entries: number;
   limits: string;
 };
+export type RecoveryCaptureOptions = { backup: string; witness: string; sourceRevision: string };
+export type RecoveryCapture = { manifest: BackupManifest; witnessSha256: string; witnessId: string };
 
 function fail(message: string): never { throw new Error(message); }
 function isWithin(parent: string, child: string): boolean {
@@ -75,11 +78,11 @@ function syncFile(path: string): void {
 function syncDirectory(path: string): void {
   const fd = openSync(path, "r"); try { fsyncSync(fd); } finally { closeSync(fd); }
 }
-function readDB(path: string): Database.Database {
+function readDB(path: string, checkIntegrity = true): Database.Database {
   ordinaryFile(path); // Reject symlinks before SQLite follows the path.
   const db = new Database(path, { readonly: true, fileMustExist: true });
   try {
-    if (db.pragma("integrity_check", { simple: true }) !== "ok") fail("SQLite integrity check failed");
+    if (checkIntegrity && db.pragma("integrity_check", { simple: true }) !== "ok") fail("SQLite integrity check failed");
     return db;
   } catch (error) { db.close(); throw error; }
 }
@@ -143,18 +146,65 @@ function journalSchema(directory: string, journals: Description["journals"]): nu
   return highest;
 }
 
+export type RecoveryInspection = { description: Description; schema?: number; files?: FileRecord[] };
+
+/** Read-only inspector used by the bounded worker; no source-copy or lease bypass. */
+export function inspectRecoveryDirectory(directory: string, includeFiles: boolean): RecoveryInspection {
+  const source = checkDirectory(directory), description = describe(source);
+  if (!includeFiles) return { description };
+  const schema = journalSchema(source, description.journals);
+  const files = ["auth.db", "control.db", ...description.journals.map(j => j.name)].sort().map(name => fileDigest(join(source, name)));
+  return { description, schema, files };
+}
+
+/** One worker at a time; verification iterates rows and hashing uses a 64 KiB buffer. */
+function inspectInWorker(directory: string, includeFiles: boolean, deadline?: number): Promise<RecoveryInspection> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./recoveryInspector.js", import.meta.url), {
+      workerData: { directory, includeFiles }, resourceLimits: { maxOldGenerationSizeMb: 128 },
+    });
+    let result: RecoveryInspection | undefined, failure: Error | undefined;
+    const timer = deadline === undefined ? undefined : setTimeout(() => {
+      failure = new Error("Recovery capture exceeded its deadline");
+      void worker.terminate().catch(error => { failure = error; });
+    }, Math.max(1, deadline - performance.now()));
+    worker.once("message", (value: RecoveryInspection) => { result = value; });
+    worker.once("error", error => { failure ??= error; });
+    worker.once("exit", code => {
+      if (timer) clearTimeout(timer);
+      if (failure) reject(failure);
+      else if (code !== 0 || !result) reject(new Error("Recovery inspection did not finish"));
+      else resolve(result);
+    });
+  });
+}
+
 /** The service must be stopped. All participating writers obey the same exclusive lease. */
 export async function captureBackup(directory: string, output: string, sourceRevision: string): Promise<BackupManifest> {
+  const source = checkDirectory(directory), lease = acquireDataLease(source);
+  try { return await captureBackupWhileLeased(source, output, sourceRevision, lease); }
+  finally { lease(); }
+}
+
+async function captureBackupWhileLeased(directory: string, output: string, sourceRevision: string, lease: DataLease, deadline?: number): Promise<BackupManifest> {
   const source = checkDirectory(directory), target = destination(output, source);
+  const check = () => {
+    assertHeldDataLease(lease, source);
+    if (deadline !== undefined && performance.now() > deadline) fail("Recovery capture exceeded its deadline");
+  };
+  check();
   if (!/^[a-f0-9]{40}$/.test(sourceRevision)) fail("Record an exact 40-character source revision");
-  const release = acquireDataLease(source);
   const work = mkdtempSync(join(dirname(target), ".kairos-backup-")); chmodSync(work, 0o700);
   try {
-    const original = describe(source);
+    check();
+    const original = (await inspectInWorker(source, false, deadline)).description;
     const names = ["auth.db", "control.db", ...original.journals.map(j => j.name)];
     for (const name of names) {
-      const db = readDB(join(source, name));
-      try { await db.backup(join(work, name)); } finally { db.close(); }
+      check();
+      // The worker has checked source integrity. Avoid repeating that blocking
+      // scan on the serving event loop while opening the SQLite backup handle.
+      const db = readDB(join(source, name), false);
+      try { await db.backup(join(work, name), { progress: () => { check(); return 100; } }); } finally { db.close(); }
       // A self-contained bundle uses rollback-journal mode. A WAL-mode header
       // can otherwise create sidecars even when a verifier opens it read-only.
       // Change only the private backup copy, never the service database.
@@ -163,28 +213,57 @@ export async function captureBackup(directory: string, output: string, sourceRev
       finally { copy.close(); }
       syncFile(join(work, name));
     }
-    const captured = describe(work);
-    if (JSON.stringify(captured) !== JSON.stringify(original) || JSON.stringify(describe(source)) !== JSON.stringify(original)) fail("Data changed during backup; refusing to publish a mixed capture");
-    const files = names.sort().map(name => fileDigest(join(work, name)));
+    const inspection = await inspectInWorker(work, true, deadline), captured = inspection.description;
+    const current = (await inspectInWorker(source, false, deadline)).description;
+    if (JSON.stringify(captured) !== JSON.stringify(original) || JSON.stringify(current) !== JSON.stringify(original)) fail("Data changed during backup; refusing to publish a mixed capture");
+    check();
+    const files = inspection.files!;
     const manifest: BackupManifest = { format: "kairos-offline-backup-v1", id: randomUUID(), captured_at: new Date().toISOString(), source_revision: sourceRevision,
-      auth_schema: AUTH_SCHEMA, journal_schema: journalSchema(work, captured.journals) ?? SCHEMA_VERSION, ...captured, files };
+      auth_schema: AUTH_SCHEMA, journal_schema: inspection.schema ?? SCHEMA_VERSION, ...captured, files };
+    check();
     writeFileSync(join(work, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     syncFile(join(work, "manifest.json")); syncDirectory(work);
+    check();
     if (existsSync(target)) fail("Backup destination appeared; refusing to replace it");
     renameSync(work, target); syncDirectory(dirname(target)); return manifest;
-  } finally { rmSync(work, { recursive: true, force: true }); release(); }
+  } finally { rmSync(work, { recursive: true, force: true }); }
 }
 
 /** Operator-selected deletion history, stored outside the data and backup being restored. Not an automatic trusted-head service. */
 export function captureDeletionWitness(directory: string, output: string): { sha256: string; witness: DeletionWitness } {
-  const source = checkDirectory(directory), target = destination(output, source), release = acquireDataLease(source);
-  try {
-    const state = describe(source);
-    const witness: DeletionWitness = { format: "kairos-deletion-witness-v1", id: randomUUID(), captured_at: new Date().toISOString(), accounts: state.accounts, users: state.users };
-    const bytes = JSON.stringify(witness, null, 2) + "\n";
-    writeFileSync(target, bytes, { flag: "wx", mode: 0o600 }); syncFile(target); syncDirectory(dirname(target));
-    return { sha256: digest(bytes), witness };
-  } finally { release(); }
+  const source = checkDirectory(directory), lease = acquireDataLease(source);
+  try { return captureDeletionWitnessWhileLeased(source, output, lease); }
+  finally { lease(); }
+}
+
+function captureDeletionWitnessWhileLeased(directory: string, output: string, lease: DataLease, state?: Description): { sha256: string; witness: DeletionWitness } {
+  const source = checkDirectory(directory), target = destination(output, source);
+  assertHeldDataLease(lease, source);
+  state ??= describe(source);
+  const witness: DeletionWitness = { format: "kairos-deletion-witness-v1", id: randomUUID(), captured_at: new Date().toISOString(), accounts: state.accounts, users: state.users };
+  const bytes = JSON.stringify(witness, null, 2) + "\n";
+  writeFileSync(target, bytes, { flag: "wx", mode: 0o600 }); syncFile(target); syncDirectory(dirname(target));
+  return { sha256: digest(bytes), witness };
+}
+
+/** Caller must drain all service work and hold its gate until this promise settles. */
+export async function captureRecoveryWhileLeased(directory: string, options: RecoveryCaptureOptions, lease: DataLease, timeoutMs = 120_000): Promise<RecoveryCapture> {
+  const source = checkDirectory(directory);
+  assertHeldDataLease(lease, source);
+  const backup = destination(options.backup, source), witness = destination(options.witness, source);
+  if (isWithin(backup, witness) || isWithin(witness, backup)) fail("Keep the deletion witness separate from the backup bundle");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) fail("Invalid recovery capture deadline");
+  const deadline = performance.now() + timeoutMs;
+  const check = () => {
+    assertHeldDataLease(lease, source);
+    if (performance.now() > deadline) fail("Recovery capture exceeded its deadline");
+  };
+  const manifest = await captureBackupWhileLeased(source, backup, options.sourceRevision, lease, deadline);
+  // The global gate is still closed, so the manifest's verified account state
+  // is also the current deletion state. Avoid another complete journal scan.
+  check();
+  const captured = captureDeletionWitnessWhileLeased(source, witness, lease, manifest);
+  return { manifest, witnessSha256: captured.sha256, witnessId: captured.witness.id };
 }
 
 /** Builds a new private directory only. Never modifies a running service or a selected backup. */

@@ -12,7 +12,9 @@
     "start": "node dist/hosted/src/main.js",
     "start:staging": "node dist/hosted/src/staging-main.js",
     "recovery": "node dist/hosted/src/recovery-main.js",
-    "test": "npm run build && node --test --test-concurrency=1 dist/hosted/test/*.test.js"
+    "test": "npm run build && node --test --test-concurrency=1 dist/hosted/test/*.test.js",
+    "recovery:request": "node dist/hosted/src/recovery-client.js",
+    "test:vault": "node --test test/recovery-vault.test.mjs"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.7",
