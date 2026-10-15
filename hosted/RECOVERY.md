@@ -2,6 +2,8 @@
 
 The offline utility has passed local synthetic checks. The coordinated capture and encrypted vault workflow below extend it for an operator-led hosted rehearsal. Actual hosted results belong in a dated acceptance receipt; implementation alone does not prove recovery. This is not an automatic backup service, customer password-reset feature, or proof against an unannounced platform rollback. Use the matching application and recovery revision.
 
+The [October 15 hosted acceptance report](RECOVERY_ACCEPTANCE_2026-10-15.md) records the completed manual rehearsal: encrypted off-host custody, an isolated restore of 131,831 entries, live-owner preservation, cleanup, and the measured maintenance and memory limits.
+
 ## What it does
 
 - The service and maintenance tools hold the same SQLite OS lock. An active process excludes another service or backup; a crashed process releases the lock. Never delete a live lock file. Older service revisions do not obey this lease and must be independently stopped before maintenance.
