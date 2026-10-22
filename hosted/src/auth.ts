@@ -21,9 +21,18 @@ export { isGeminiConnectorClientId } from "./gemini.js";
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 export const CHATGPT_CONNECTOR_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
 export const GROK_CONNECTOR_CLIENT_ID = "https://grok.com/oauth/mcp-client.json";
+// Meta Muse's connector form asks for a pre-issued client id. It does not present
+// a client-metadata document, so this id must not be an HTTPS URL and must not
+// be added to the metadata allow-list above.
+export const MUSE_CONNECTOR_CLIENT_ID = "kairos-journal-meta-muse";
+export const MUSE_CONNECTOR_REDIRECT_URI = "https://agent.meta.ai/api/hatch/oauth/callback";
 export const isStagingClientAllowed = (clientId: string, baseURL?: string): boolean =>
   clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID || clientId === GROK_CONNECTOR_CLIENT_ID ||
   (baseURL !== undefined && isGeminiConnectorClientId(clientId, baseURL));
+
+const MUSE_SCOPES = ["openid", "offline_access", "journal:read", "journal:write"] as const;
+const MUSE_GRANTS = ["authorization_code", "refresh_token"] as const;
+const stagingBaseURLs = new WeakMap<object, string>();
 
 export function makeAuth(baseURL: string, secret: string, accounts: Accounts, options: {
   staging?: boolean; trustedEdge?: "render-cloudflare";
@@ -66,6 +75,9 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
         clientRegistrationDefaultResources: [`${baseURL}/mcp`],
         allowDynamicClientRegistration: !options.staging,
         allowUnauthenticatedClientRegistration: !options.staging,
+        // Cache only the pre-registered Muse client. CIMD clients stay uncached so
+        // their metadata can refresh. The cache also refuses client-management edits.
+        ...(options.staging ? { cachedTrustedClients: new Set([MUSE_CONNECTOR_CLIENT_ID]) } : {}),
         clientPrivileges: () => false, resourcePrivileges: () => false,
         customAccessTokenClaims: ({ user }) => ({ kairos_epoch: user ? accounts.get(user.id).epoch : -1 }),
       }),
@@ -77,6 +89,7 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
       }),
     ],
   });
+  if (options.staging) stagingBaseURLs.set(auth, baseURL);
   return { auth, database };
 }
 export type KairosAuth = ReturnType<typeof makeAuth>["auth"];
@@ -104,16 +117,96 @@ export function oauthGrantOwner(database: Database.Database, input: Record<strin
   } catch { /* The provider will reject malformed verification records. */ }
 }
 
+type MuseClientRow = {
+  name?: string | null; redirectUris?: unknown; tokenEndpointAuthMethod?: string | null;
+  grantTypes?: unknown; responseTypes?: unknown; applicationType?: string | null; scopes?: unknown;
+  disabled?: boolean | number | null; skipConsent?: boolean | number | null; requirePKCE?: boolean | number | null;
+  clientSecret?: string | null; clientDiscoveryId?: string | null; jwks?: string | null; jwksUri?: string | null;
+  clientCredentialsScopes?: unknown;
+};
+
+const textList = (value: unknown): string[] | undefined =>
+  Array.isArray(value) && value.every(item => typeof item === "string") ? value : undefined;
+const sameList = (value: unknown, expected: readonly string[]): boolean => {
+  const list = textList(value);
+  return !!list && list.length === expected.length && list.every((item, index) => item === expected[index]);
+};
+const enabledFlag = (value: unknown): boolean => value === true || value === 1;
+const blank = (value: unknown): boolean => value == null || value === "";
+
+/**
+ * Idempotently records the one Meta Muse public client for invited staging.
+ * Better Auth 1.7.7 can cache a trusted client id, but it will not create that
+ * row from a chosen id. Client ID Metadata Documents are the wrong seam: a
+ * non-URL id with a discovery owner is ignored, and Muse does not publish a
+ * metadata document. The existing schema version stays in place so an already
+ * migrated staging database still receives the client on process start.
+ * Dynamic registration and the metadata allow-list are unchanged.
+ */
+export async function ensureMuseConnectorClient(auth: KairosAuth, baseURL: string): Promise<void> {
+  const { adapter } = await auth.$context;
+  const resource = `${baseURL}/mcp`;
+  // Plugin init can race the first migration and skip its resource insert. Re-apply
+  // the configured MCP resource so this client's link has the same token policy.
+  if (!await adapter.findOne({ model: "oauthResource", where: [{ field: "identifier", value: resource }] })) {
+    const plugin = auth.options.plugins?.find(item => item.id === "oauth-provider") as { options?: { resources?: Array<string | { identifier: string; name?: string; accessTokenTtl?: number; allowedScopes?: string[]; disabled?: boolean }> } } | undefined;
+    const configured = plugin?.options?.resources?.map(entry => typeof entry === "string" ? { identifier: entry } : entry).find(entry => entry.identifier === resource);
+    if (!configured) throw new Error("The Kairos MCP resource is not configured");
+    const now = new Date();
+    try {
+      await adapter.create({ model: "oauthResource", data: {
+        identifier: resource, name: configured.name ?? resource, accessTokenTtl: configured.accessTokenTtl ?? null,
+        allowedScopes: configured.allowedScopes ?? null, disabled: configured.disabled ?? false,
+        dpopBoundAccessTokensRequired: false, policyVersion: 1, createdAt: now, updatedAt: now,
+      } });
+    } catch (error) {
+      if (!/unique|duplicate/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    }
+  }
+  const canonical = {
+    name: "Meta Muse", redirectUris: [MUSE_CONNECTOR_REDIRECT_URI], tokenEndpointAuthMethod: "none",
+    grantTypes: [...MUSE_GRANTS], responseTypes: ["code"], applicationType: "web", scopes: [...MUSE_SCOPES],
+    disabled: false, skipConsent: false, requirePKCE: true, clientSecret: null, clientDiscoveryId: null,
+    jwks: null, jwksUri: null, clientCredentialsScopes: [] as string[],
+  };
+  const current = await adapter.findOne<MuseClientRow>({ model: "oauthClient", where: [{ field: "clientId", value: MUSE_CONNECTOR_CLIENT_ID }] });
+  const aligned = !!current && current.name === canonical.name && sameList(current.redirectUris, canonical.redirectUris) &&
+    current.tokenEndpointAuthMethod === canonical.tokenEndpointAuthMethod && sameList(current.grantTypes, canonical.grantTypes) &&
+    sameList(current.responseTypes, canonical.responseTypes) && current.applicationType === canonical.applicationType &&
+    sameList(current.scopes, canonical.scopes) && !enabledFlag(current.disabled) && !enabledFlag(current.skipConsent) &&
+    enabledFlag(current.requirePKCE) && blank(current.clientSecret) && blank(current.clientDiscoveryId) &&
+    blank(current.jwks) && blank(current.jwksUri) && sameList(current.clientCredentialsScopes ?? [], canonical.clientCredentialsScopes);
+  if (!current) {
+    const now = new Date();
+    await adapter.create({ model: "oauthClient", data: { clientId: MUSE_CONNECTOR_CLIENT_ID, ...canonical, createdAt: now, updatedAt: now } });
+  } else if (!aligned) {
+    const updated = await adapter.update<MuseClientRow>({ model: "oauthClient", where: [{ field: "clientId", value: MUSE_CONNECTOR_CLIENT_ID }], update: { ...canonical, updatedAt: new Date() } });
+    if (!updated) throw new Error("The pre-registered Muse client could not be restored");
+  }
+  const links = await adapter.findMany<{ resourceId: string }>({ model: "oauthClientResource", where: [{ field: "clientId", value: MUSE_CONNECTOR_CLIENT_ID }] });
+  for (const link of links) {
+    if (link.resourceId === resource) continue;
+    await adapter.delete({ model: "oauthClientResource", where: [{ field: "clientId", value: MUSE_CONNECTOR_CLIENT_ID }, { field: "resourceId", value: link.resourceId }] });
+  }
+  if (!links.some(link => link.resourceId === resource)) {
+    await adapter.create({ model: "oauthClientResource", data: { clientId: MUSE_CONNECTOR_CLIENT_ID, resourceId: resource, createdAt: new Date() } });
+  }
+}
+
 export async function migrateAuth(auth: KairosAuth, database: Database.Database): Promise<void> {
   // Exact dependency versions own this schema. Run their migration once, not on every restart.
   // SQLite stores array columns as TEXT; re-introspection otherwise produces spurious type warnings.
   database.exec("CREATE TABLE IF NOT EXISTS kairos_auth_schema (version TEXT PRIMARY KEY)");
   const installed = database.prepare("SELECT version FROM kairos_auth_schema").get() as { version: string } | undefined;
-  if (installed?.version === "better-auth-1.7.7") return;
-  if (installed) throw new Error("An explicit, tested authentication database migration is required");
-  const { runMigrations } = await getMigrations(auth.options);
-  await runMigrations();
-  database.prepare("INSERT INTO kairos_auth_schema(version) VALUES (?)").run("better-auth-1.7.7");
+  if (installed && installed.version !== "better-auth-1.7.7") throw new Error("An explicit, tested authentication database migration is required");
+  if (!installed) {
+    const { runMigrations } = await getMigrations(auth.options);
+    await runMigrations();
+    database.prepare("INSERT INTO kairos_auth_schema(version) VALUES (?)").run("better-auth-1.7.7");
+  }
+  // Already-migrated staging databases still need the Muse client. This is not a schema version change.
+  const baseURL = stagingBaseURLs.get(auth);
+  if (baseURL) await ensureMuseConnectorClient(auth, baseURL);
 }
 
 export class AccessError extends Error { constructor(readonly status: number, message: string) { super(message); } }
