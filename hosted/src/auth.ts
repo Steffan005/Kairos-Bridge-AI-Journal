@@ -21,6 +21,9 @@ export { isGeminiConnectorClientId } from "./gemini.js";
 export const CLAUDE_CONNECTOR_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 export const CHATGPT_CONNECTOR_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
 export const GROK_CONNECTOR_CLIENT_ID = "https://grok.com/oauth/mcp-client.json";
+// Cursor / Grok Bot presents this metadata document URL. The document, not this
+// allow-list, declares its callbacks. Admission is the exact URL only.
+export const CURSOR_CONNECTOR_CLIENT_ID = "https://cursor.com/oauth/mcp-client.json";
 // Meta Muse's connector form asks for a pre-issued client id. It does not present
 // a client-metadata document, so this id must not be an HTTPS URL and must not
 // be added to the metadata allow-list above.
@@ -28,6 +31,7 @@ export const MUSE_CONNECTOR_CLIENT_ID = "kairos-journal-meta-muse";
 export const MUSE_CONNECTOR_REDIRECT_URI = "https://agent.meta.ai/api/hatch/oauth/callback";
 export const isStagingClientAllowed = (clientId: string, baseURL?: string): boolean =>
   clientId === CLAUDE_CONNECTOR_CLIENT_ID || clientId === CHATGPT_CONNECTOR_CLIENT_ID || clientId === GROK_CONNECTOR_CLIENT_ID ||
+  clientId === CURSOR_CONNECTOR_CLIENT_ID ||
   (baseURL !== undefined && isGeminiConnectorClientId(clientId, baseURL));
 
 const MUSE_SCOPES = ["openid", "offline_access", "journal:read", "journal:write"] as const;
