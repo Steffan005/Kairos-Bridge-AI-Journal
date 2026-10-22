@@ -11,7 +11,7 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { Journal } from "../../src/journal.js";
 import { createStaging } from "../src/service.js";
-import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID } from "../src/auth.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, CURSOR_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID } from "../src/auth.js";
 import { oauthWriteOrigin } from "../src/writeOrigin.js";
 
 const baseURL = "https://journal.example.test";
@@ -32,6 +32,8 @@ test("provider attribution uses exact admitted client identities, never similar 
       assert.equal(stamp.client_id, lookalike, "unrecognized identities are retained exactly");
     }
   }
+  assert.equal(oauthWriteOrigin(CURSOR_CONNECTOR_CLIENT_ID, baseURL).provider, null);
+  assert.equal(oauthWriteOrigin(CURSOR_CONNECTOR_CLIENT_ID, baseURL).client_id, CURSOR_CONNECTOR_CLIENT_ID);
   assert.equal(oauthWriteOrigin("Claude", baseURL).provider, null);
   assert.equal(oauthWriteOrigin("chatgpt", baseURL).provider, null);
   assert.equal(oauthWriteOrigin(gemini.replace("journal_example_test", "other_example_test"), baseURL).provider, null);
