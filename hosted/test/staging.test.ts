@@ -11,7 +11,7 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
 import { stagingSettings } from "../src/deployment.js";
-import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, isGeminiConnectorClientId, isStagingClientAllowed } from "../src/auth.js";
+import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, MUSE_CONNECTOR_CLIENT_ID, MUSE_CONNECTOR_REDIRECT_URI, isGeminiConnectorClientId, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
 const revision = "1".repeat(40);
@@ -34,6 +34,8 @@ test("staging configuration rejects ambiguous or insecure deployment settings", 
   assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
   assert.equal(isStagingClientAllowed(CHATGPT_CONNECTOR_CLIENT_ID), true);
   assert.equal(isStagingClientAllowed(GROK_CONNECTOR_CLIENT_ID), true);
+  assert.equal(isStagingClientAllowed(MUSE_CONNECTOR_CLIENT_ID), false);
+  assert.equal(isStagingClientAllowed(MUSE_CONNECTOR_REDIRECT_URI), false);
   for (const clientId of ["https://claude.ai", "https://claude.ai/oauth/claude-code-client-metadata", CLAUDE_CONNECTOR_CLIENT_ID + "?copy=1", "https://claude.ai.evil.example/oauth/mcp-oauth-client-metadata",
     CHATGPT_CONNECTOR_CLIENT_ID + "?copy=1", CHATGPT_CONNECTOR_CLIENT_ID + "#copy", CHATGPT_CONNECTOR_CLIENT_ID + "/",
     "https://chatgpt.com.evil.example/oauth/client.json", "https://user@chatgpt.com/oauth/client.json", "http://chatgpt.com/oauth/client.json",
@@ -114,7 +116,12 @@ test("invited staging: proxy boundary, HTTPS metadata, signup gate and durable o
       const target = new URLSearchParams({ client_id: "https://evil.example.test/client.json", redirect_uri: "https://evil.example.test/callback", response_type: "code", scope: "journal:read", code_challenge: "a".repeat(43), code_challenge_method: "S256", resource: baseURL + "/mcp" });
       const denied = await request("/api/auth/oauth2/authorize?" + target, { headers: { cookie, accept: "application/json" } }); assert.ok(denied.status >= 400);
       const { adapter } = await staging.auth.$context;
-      assert.equal((await adapter.findMany({ model: "oauthClient" })).length, 0);
+      const clients = await adapter.findMany<{ clientId: string; redirectUris: string[]; tokenEndpointAuthMethod: string; skipConsent?: boolean | null }>({ model: "oauthClient" });
+      assert.equal(clients.length, 1, "staging keeps the pre-registered Muse client and no dynamically registered client");
+      assert.equal(clients[0].clientId, MUSE_CONNECTOR_CLIENT_ID);
+      assert.deepEqual(clients[0].redirectUris, [MUSE_CONNECTOR_REDIRECT_URI]);
+      assert.equal(clients[0].tokenEndpointAuthMethod, "none");
+      assert.equal(Boolean(clients[0].skipConsent), false);
     });
     await t.test("declared Render edge uses the single Cloudflare address, not the forwarded chain", async () => {
       assert.deepEqual(staging.auth.options.advanced?.ipAddress?.ipAddressHeaders, ["cf-connecting-ip"]);

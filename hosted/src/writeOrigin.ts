@@ -9,6 +9,8 @@ import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, GROK_CONNECTOR
  * Display names, entry actors, caller parameters and HTTP Origin are not evidence.
  */
 export function oauthWriteOrigin(clientId: string, baseURL: string): WriteOrigin {
+  // The pre-registered Muse client is intentionally unclassified. A display name
+  // or a similar client id does not become a provider.
   const provider = clientId === CLAUDE_CONNECTOR_CLIENT_ID ? "claude"
     : clientId === CHATGPT_CONNECTOR_CLIENT_ID ? "chatgpt"
     : clientId === GROK_CONNECTOR_CLIENT_ID ? "grok"
