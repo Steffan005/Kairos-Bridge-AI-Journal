@@ -17,7 +17,7 @@ Choose the part of Kairos you want to use or inspect. These are separate compone
 | **Local Journal on main** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | Public source, baseline local package v0.1.0. [Install from source](#run-the-local-journal). |
 | **Extended Journal engine** | Adds project briefings, explicit corrections/resolutions and addressed handoffs to the engine used by local MCP clients and the account adapter. | [Public engine source and setup](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/chatgpt/private-journal-service) on `chatgpt/private-journal-service`. These additions are not in the older main snapshot. |
 | **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md). The managed invited pilot is one deployment. |
-| **Kairos for iPhone** | Native journal search, note entry and connection controls. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
+| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
 
 The instructions below describe the **baseline local package on main**. For local project continuation, use the extended engine on the public implementation branch linked above. The optional account adapter stores per-account files under its operator-selected data directory; its deployment can be local or self-hosted. The iPhone app has separate source and a configured service connection.
 
@@ -252,7 +252,7 @@ examples/         ready-to-edit configs for Claude Desktop and Cursor
 
 ## Known limitations (v0.1)
 
-- No OAuth yet, so ChatGPT can't connect with a token, and full ChatGPT write access also depends on the ChatGPT plan.
+- The standalone local HTTP server supports bearer-token authentication. Use the [optional account adapter](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md) for OAuth connections. Check your AI app’s current account and connection requirements.
 - The secret filter only catches obvious patterns. It can't recognize private facts written in plain words.
 - The file isn't encrypted beyond your computer's own disk encryption (FileVault, BitLocker).
 - Tamper evidence proves the history wasn't changed **after** it was written. It can't stop someone with access to your computer from rewriting the entire chain from scratch. To guard against that, save the chain head hash (`verify` prints it) somewhere else from time to time.

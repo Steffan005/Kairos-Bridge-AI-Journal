@@ -8,7 +8,7 @@
 
 | You want to… | Start here |
 |---|---|
-| Use or inspect the native iPhone companion | [Kairos for iPhone](https://github.com/Steffan005/Kairos-Bridge-iOS). It is an invited TestFlight beta; the latest documented owner-accepted build is 0.1.0 (6), October 14, 2026. Public App Store release remains ahead. |
+| Use or inspect the native iPhone companion | [Kairos for iPhone](https://github.com/Steffan005/Kairos-Bridge-iOS). Its journal view is **Anamnesis — Your journal**. The app is in an invited TestFlight beta. The latest documented owner-accepted build is 0.1.0 (6), October 14, 2026. Public App Store release remains ahead. |
 | Connect local desktop AI tools to a file you control | [Run the local Journal](README.md#run-the-local-journal), then configure a supported MCP client. |
 | Run an optional account and connection service | [Self-hostable adapter source and setup](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md). Run it on an operator-controlled computer or server; the managed invited pilot is one deployment and has no public customer signup. |
 | Use project resumption and handoffs locally or through the service | [Extended engine source and local setup](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/chatgpt/private-journal-service) and [continuation contract](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/CONTINUE.md). The public `chatgpt/private-journal-service` branch supplies these engine features; the older local v0.1.0 snapshot on main does not. |
