@@ -49,7 +49,7 @@ The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot pag
 
 ## Project continuation and delivery evidence
 
-See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. These are features of the shared Journal engine, available through [local MCP operation](../README.md#run-the-local-journal) as well as this adapter; they are absent from the older main snapshot. Schema 3 preserves existing records and hashes. On the authenticated account-service path, new notes separately record the connection that delivered them; the Author label remains declared attribution. Local MCP operation has no invented authenticated origin and uses an explicit recipient selector for addressed handoffs. Delivery origin is server-observed evidence, not provider-signed note content. These engine changes do not add a native briefing screen.
+See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. These are features of the shared Journal engine, available through [local MCP operation](../README.md#run-the-local-journal) as well as this adapter. Schema 3 preserves existing records and hashes. On the authenticated account-service path, new notes separately record the connection that delivered them; the Author label remains declared attribution. Local MCP operation has no invented authenticated origin and uses an explicit recipient selector for addressed handoffs. Delivery origin is server-observed evidence, not provider-signed note content. These engine changes do not add a native briefing screen.
 
 ## Run the local screens
 

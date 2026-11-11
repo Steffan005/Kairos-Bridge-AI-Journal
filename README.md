@@ -68,7 +68,7 @@ git clone https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git
 cd Kairos-Bridge-AI-Journal
 
 # 2. Install and build
-npm install
+npm ci
 npm run build
 
 # 3. Create your journal and check it
@@ -78,7 +78,7 @@ node dist/src/cli.js stats
 
 Then configure a supported AI app (below) and restart it. In a new chat, ask: *"Check my journal, then remember that I prefer short answers."*
 
-> **If `npm install` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
+> **If `npm ci` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
 
 ---
 
@@ -152,7 +152,7 @@ node dist/src/server.js --http --port 8787
 - With no token set, it accepts requests only when they're addressed to `localhost`/`127.0.0.1`. That blocks web pages from reaching it through DNS tricks. To accept a tunnel's hostname without a token, list it in `KAIROS_JOURNAL_ALLOWED_HOSTS`, though using a token is strongly recommended.
 - Endpoint: `POST /mcp` (MCP Streamable HTTP, stateless). `GET /healthz` returns `{"ok":true}`.
 
-The following table describes the **local package and its HTTP mode**, based on the October 2026 setup notes. Provider interfaces and account availability change; check the linked provider documentation. The separate [hosted pilot](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md) implements account sign-in and has its own provider acceptance records.
+The following table describes the **local package and its HTTP mode**, based on the October 2026 setup notes. Provider interfaces and account availability change; check the linked provider documentation. The separate [hosted pilot](hosted/README.md) implements account sign-in and has its own provider acceptance records.
 
 | App | How it connects | Documented local-package path |
 |---|---|---|
@@ -179,7 +179,7 @@ The folder is created private to you (permissions `700`, file `600` on macOS/Lin
 
 - **Local mode stores the journal on your computer.** The stdio server makes no network connections of its own; it reads and writes the local file.
 - **Connected AI apps receive the notes they retrieve.** If that app uses a cloud provider, those notes are processed under the provider's policies. Connect apps you trust with your journal.
-- **Account-service storage follows the operator's deployment.** The adapter keeps per-account journals under its configured data directory, on the computer or server where it runs. Its account controls, active deletion and recovery-copy retention are documented in the [service adapter](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md#revocation-retention-and-integrity-details). The managed pilot is one installation; an AI connection alone does not establish where a journal is stored.
+- **Account-service storage follows the operator's deployment.** The adapter keeps per-account journals under its configured data directory, on the computer or server where it runs. Its account controls, active deletion and recovery-copy retention are documented in the [service adapter](hosted/README.md#revocation-retention-and-integrity-details). The managed pilot is one installation; an AI connection alone does not establish where a journal is stored.
 - The AI is told never to save secrets, and the server rejects text that clearly looks like a password, API key, private key, payment card or Social Security number. That check is a safety net, not a guarantee.
 - The AI is also told that journal entries are notes, not instructions, so it doesn't obey text that someone slipped into an entry.
 
