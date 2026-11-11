@@ -1,8 +1,34 @@
-# Kairos private journal service — development preview
+# Hosted Kairos Journal
 
-This adapter reuses the existing Journal engine. It adds account sign-in, OAuth consent, one SQLite journal per account, and owner controls. Invited HTTPS development staging is live. Actual Claude, ChatGPT, Grok and Gemini iPhone conversations read and wrote notes in the same owner journal; their saved records were independently matched and appeared in native Kairos. Grok retrieved a note ChatGPT had saved, then saved its own note that another fresh Grok phone chat recovered. Grok connector creation through iPhone Safari also passed. See the [deployment receipt](DEPLOYMENT_RECEIPT_2026-10-10.md), [ChatGPT evidence](CHATGPT_ACCEPTANCE.md) [Grok evidence](GROK_ACCEPTANCE.md) and [Gemini evidence and current mobile issue](GEMINI_ACCEPTANCE.md) for source revisions and limits. After its initial accepted round trip, the owner reported Kairos missing from Gemini on iPhone following an app update; continued Gemini mobile availability and live renewal are on hold at the owner’s direction. Current Gemini use is scoped to the computer browser. This adapter is **not a customer release or the native app**; the native client lives in the separate [Kairos-Bridge-iOS repository](https://github.com/Steffan005/Kairos-Bridge-iOS). Independent onboarding, other providers' initial phone connector creation and customer recovery remain pending. The local entry point accepts only loopback HTTP; invited staging requires HTTPS. Both accept development email addresses ending in `.test`.
+**One journal for the AI connections you approve.**
 
-The desktop package remains separate and retains its original install and stdio/HTTP behavior. The public Next.js App repository remains separate too. This minimal adapter UI is for acceptance work; it is not the final app design.
+Save context in one supported AI app and bring it into your next conversation in another. Hosted Kairos adds account sign-in, consent and owner controls to the Journal engine. Each account has its own journal; approved connections can read notes and, when granted write access, save notes in that record.
+
+**Status: invited hosted pilot.** The owner has completed shared-journal read/write paths with Claude, ChatGPT and Grok, with their notes independently matched and visible in the native iPhone companion. Gemini's initial phone round trip also passed; after a later app update, the owner reported the connector missing on iPhone. Further Gemini phone troubleshooting and live renewal are on hold, with current documented Gemini use scoped to the computer browser. Independent onboarding and public customer signup remain ahead.
+
+## What is implemented
+
+- **Project resumption.** The shared Journal engine selects recorded goals, decisions, explicit open work and addressed handoffs, with dates and source IDs. This engine feature also works through local MCP without the account adapter.
+- **History with explicit corrections.** The same engine supports replacement and resolution links in local and account-service operation; original records remain available in History.
+- **Delivery evidence.** Hosted writes include the server-observed authenticated connection separately from the declared Author. New fields participate in the entry hash; they do not identify a particular model or establish the truth of a note.
+- **Owner controls.** Download the journal, disconnect all AI access, or delete the active journal. Signing out and disconnecting have different effects; retention details are below.
+- **Journal search.** The owner API supports Words, Exact phrase and Note ID searches with snapshot paging for the native client.
+
+Local storage and self-hosting are core Journal choices. This account adapter is a service operators can deploy; the existing managed invited pilot is one deployment. The [local desktop package](../README.md#run-the-local-journal), this hosted adapter and the [native iPhone companion](https://github.com/Steffan005/Kairos-Bridge-iOS) have separate setup and release states. The native Kairos app presents its journal as **Anamnesis — Your journal**. The latest documented owner-accepted native beta is 0.1.0 build 6, October 14, 2026. This adapter's browser screens support the invited pilot; they are not the final app design.
+
+## Start with the evidence
+
+| Question | Read |
+|---|---|
+| How does project resumption work? | [Continue and authenticated delivery contract](CONTINUE.md) |
+| Which actual provider paths passed? | [Deployment and Claude evidence](DEPLOYMENT_RECEIPT_2026-10-10.md), [ChatGPT](CHATGPT_ACCEPTANCE.md), [Grok](GROK_ACCEPTANCE.md), [Gemini and its current phone hold](GEMINI_ACCEPTANCE.md) |
+| What changed for additional clients? | [Meta Muse preparation](MUSE_ACCEPTANCE.md) and the client-specific rules below. Preparation and local tests are distinct from provider acceptance. |
+| How do native searches reach older records? | [Whole-journal owner search](OWNER_SEARCH.md) |
+| How is imported history attributed? | [Owner-authorized history import](HISTORY_IMPORT.md) |
+| What recovery has been demonstrated? | [October 15 hosted recovery rehearsal](RECOVERY_ACCEPTANCE_2026-10-15.md): a manual controlled restore preserved all 131,820 baseline owner entries. Automatic backup scheduling and customer recovery remain separate work. |
+| How do I run or inspect the service? | [Local acceptance checks](#run-the-acceptance-checks), [local screens](#run-the-local-screens), [hosting configuration](STAGING.md), and [source and references](#source-and-references) |
+
+The local development entry point accepts loopback HTTP; invited staging requires HTTPS. New development accounts must use addresses ending in `.test`; existing accounts sign in with their current Kairos email. Keep account credentials, invitations, private journal content and recovery bundles out of Git and public screenshots.
 
 ## Run the acceptance checks
 
@@ -23,7 +49,7 @@ The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot pag
 
 ## Project continuation and delivery evidence
 
-See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. Schema 3 preserves existing records and hashes. New hosted notes separately record the authenticated connection that delivered them; the Author label remains declared attribution. This is server-observed delivery evidence, not provider-signed note content. No new permission or native build is required for this server slice.
+See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. These are features of this branch's shared engine, available through [local MCP operation](../README.md#run-the-local-journal) as well as this adapter; they are absent from the older main snapshot. Schema 3 preserves existing records and hashes. On the authenticated account-service path, new notes separately record the connection that delivered them; the Author label remains declared attribution. Local MCP operation has no invented authenticated origin and uses an explicit recipient selector for addressed handoffs. Delivery origin is server-observed evidence, not provider-signed note content. These engine changes do not add a native briefing screen.
 
 ## Run the local screens
 
