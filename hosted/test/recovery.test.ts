@@ -184,7 +184,7 @@ test("controlled offline recovery: real credentials, deletion history and incomp
     });
     await t.test("kernel lock survives competing processes and releases after a crash", async () => {
       const directory = join(root, "crash-lease");
-      const child = spawn(process.execPath, ["--input-type=module", "-e", `import {acquireDataLease} from ${JSON.stringify(new URL("../src/dataLease.js", import.meta.url).href)}; acquireDataLease(${JSON.stringify(directory)}); console.log('lease ready'); setInterval(()=>{},1000);`], { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(process.execPath, ["--input-type=module", "-e", `import {acquireDataLease} from ${JSON.stringify(new URL("../src/dataLease.js", import.meta.url).href)}; globalThis.lease = acquireDataLease(${JSON.stringify(directory)}); console.log('lease ready'); setInterval(()=>{},1000);`], { stdio: ["ignore", "pipe", "pipe"] });
       try {
         await new Promise<void>((resolve, reject) => {
           child.stdout.once("data", bytes => bytes.toString().includes("lease ready") ? resolve() : reject(new Error("Child did not acquire its lease")));

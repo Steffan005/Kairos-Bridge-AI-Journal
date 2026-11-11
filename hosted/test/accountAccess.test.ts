@@ -174,8 +174,10 @@ test("account challenges reject stale credentials, expired links, email races an
   const stale = tokenFrom(f.messages.at(-1)!);
   f.database.prepare('UPDATE "account" SET password = ? WHERE userId = ? AND providerId = ?').run(await f.context.password.hash(nextPassword), b.id, "credential");
   assert.equal((await f.request("/confirm-email", { token: stale }, b.cookie)).status, 400);
+  const winner = f.database.prepare('SELECT id FROM "user" WHERE email = ?').get(target) as { id: string } | undefined;
+  assert.ok(winner && [a.id, b.id].includes(winner.id));
   const reset = await f.resetLink(target);
-  f.database.prepare('UPDATE "user" SET email = ? WHERE id = ?').run("changed@recovery-fixture.org", a.id);
+  f.database.prepare('UPDATE "user" SET email = ? WHERE id = ?').run("changed@recovery-fixture.org", winner.id);
   assert.equal((await f.request("/reset-password", { token: reset, newPassword: nextPassword })).status, 400, "link binds current email and immutable owner");
   assert.equal((await f.request("/reset-password", { token: "malformed", newPassword: nextPassword })).status, 400);
   assert.equal((await f.request("/email-change", { newEmail: "x@example.test", currentPassword: nextPassword }, b.cookie)).status, 400);
