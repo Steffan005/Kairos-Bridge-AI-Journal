@@ -17,7 +17,7 @@ Choose the part of Kairos you want to use or inspect. These are separate compone
 | **Local Journal engine** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | This branch includes the extended engine. [Run it locally](#run-the-local-journal). The older main snapshot lacks the continuation additions. |
 | **Project continuation** | Source-linked project briefings, explicit corrections/resolutions and addressed handoffs work through the local MCP engine as well as the account adapter. | [Continuation contract](hosted/CONTINUE.md). These features depend on this engine revision, not remote hosting. |
 | **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](hosted/README.md). The managed invited pilot is one deployment. |
-| **Kairos for iPhone** | Native journal search, note entry and connection controls. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
+| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
 
 The instructions below run **this branch's extended Journal engine locally**, with no account service required. The optional account adapter stores per-account files under an operator-selected data directory on the computer or server where it runs. The iPhone app has separate source and a configured service connection.
 
@@ -263,7 +263,7 @@ examples/         ready-to-edit configs for Claude Desktop and Cursor
 
 ## Known limitations (v0.1)
 
-- No OAuth yet, so ChatGPT can't connect with a token, and full ChatGPT write access also depends on the ChatGPT plan.
+- The standalone local HTTP server supports bearer-token authentication. Use the [optional account adapter](hosted/README.md) for OAuth connections. Check your AI app’s current account and connection requirements.
 - The secret filter only catches obvious patterns. It can't recognize private facts written in plain words.
 - The file isn't encrypted beyond your computer's own disk encryption (FileVault, BitLocker).
 - Tamper evidence proves the history wasn't changed **after** it was written. It can't stop someone with access to your computer from rewriting the entire chain from scratch. To guard against that, save the chain head hash (`verify` prints it) somewhere else from time to time.

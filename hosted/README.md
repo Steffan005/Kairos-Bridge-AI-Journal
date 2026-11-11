@@ -14,7 +14,7 @@ Save context in one supported AI app and bring it into your next conversation in
 - **Owner controls.** Download the journal, disconnect all AI access, or delete the active journal. Signing out and disconnecting have different effects; retention details are below.
 - **Journal search.** The owner API supports Words, Exact phrase and Note ID searches with snapshot paging for the native client.
 
-Local storage and self-hosting are core Journal choices. This account adapter is a service operators can deploy; the existing managed invited pilot is one deployment. The [local desktop package](../README.md#run-the-local-journal), this hosted adapter and the [native iPhone companion](https://github.com/Steffan005/Kairos-Bridge-iOS) have separate setup and release states. The latest documented owner-accepted native beta is 0.1.0 build 6, October 14, 2026. This adapter's browser screens support the invited pilot; they are not the final app design.
+Local storage and self-hosting are core Journal choices. This account adapter is a service operators can deploy; the existing managed invited pilot is one deployment. The [local desktop package](../README.md#run-the-local-journal), this hosted adapter and the [native iPhone companion](https://github.com/Steffan005/Kairos-Bridge-iOS) have separate setup and release states. The native Kairos app presents its journal as **Anamnesis — Your journal**. The latest documented owner-accepted native beta is 0.1.0 build 6, October 14, 2026. This adapter's browser screens support the invited pilot; they are not the final app design.
 
 ## Start with the evidence
 
