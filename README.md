@@ -1,25 +1,37 @@
-# Kairos-Bridge AI Journal (MCP server)
+# Kairos-Bridge AI Journal
 
-**A memory journal that you own, which every AI you use can read and write.**
+**The bridge to remembrance.**
 
-Your AI reads your journal before it talks to you and writes a short note afterward. Switch from Claude to ChatGPT to Cursor and each one still knows you, because the memory sits in a file on **your** computer and not inside any company's app.
+**One journal for the AI apps you approve.**
 
-> Patent pending, U.S. Provisional 63/912,083.
-> Status: development preview (v0.1.0). Source is on GitHub; no npm release, customer-hosted connector or native iPhone app is released. Source: https://github.com/Steffan005/Kairos-Bridge-AI-Journal
-> Contact: Steffan Douglas Haskins, steffan.haskins@gmail.com
-> Kairos Journal, created by Steffan Douglas Haskins. Copyright (C) 2026 Steffan Douglas Haskins. Free, open-source software under the GNU AGPL-3.0-or-later (see [License](#license)).
+Keep important notes, preferences and decisions available for your next conversation. Kairos gives supported AI apps a shared place to read and save that context, with dated records you can search, inspect and export. **Run the Journal on your own computer and keep its records on your own disk.** Local storage and self-hosting are core deployment choices; using the managed invited pilot is optional.
+
+Created by **Steffan Douglas Haskins**. Copyright (C) 2026 Steffan Douglas Haskins. Source is available under **AGPL-3.0-or-later**, with separate commercial licensing available. Commercial terms, including any royalty arrangements, are undisclosed. See [License](#license), [Commercial use](#commercial-use) and [Related patent work](#related-patent-work).
+
+## Start here
+
+Choose the part of Kairos you want to use or inspect. These are separate components with different setup and availability.
+
+| Component | What it does | Availability and source |
+|---|---|---|
+| **Local Journal engine** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | This branch includes the extended engine. [Run it locally](#run-the-local-journal). The older main snapshot lacks the continuation additions. |
+| **Project continuation** | Source-linked project briefings, explicit corrections/resolutions and addressed handoffs work through the local MCP engine as well as the account adapter. | [Continuation contract](hosted/CONTINUE.md). These features depend on this engine revision, not remote hosting. |
+| **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](hosted/README.md). The managed invited pilot is one deployment. |
+| **Kairos for iPhone** | Native journal search, note entry and connection controls. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
+
+The instructions below run **this branch's extended Journal engine locally**, with no account service required. The optional account adapter stores per-account files under an operator-selected data directory on the computer or server where it runs. The iPhone app has separate source and a configured service connection.
+
+For optional sign-in and remote-client access, begin with the [account adapter](hosted/README.md). The [Continue contract](hosted/CONTINUE.md) covers local-engine project briefings and addressed handoffs as well as service use.
 
 ---
 
 ## What it does, in plain words
 
-**Hosted work in progress:** [The separate hosted adapter](hosted/README.md) has local account/OAuth acceptance checks and a prepared invitation-gated HTTPS staging path. Hosting and the actual Claude iPhone OAuth flow remain pending. The desktop journal described below remains available separately.
-
-- **One file, on your machine.** Everything is stored in a single file: `~/.kairos-journal/journal.db`. No account, no cloud, and nobody pays for storage, because it's your own disk.
-- **Any AI app can plug in.** It speaks MCP (Model Context Protocol), the standard plug for connecting tools to AI apps such as Claude Desktop, Cursor and others.
+- **Local storage.** The local package stores your journal in a single file: `~/.kairos-journal/journal.db`. No account, no cloud, and nobody pays for storage, because it's your own disk.
+- **Connect supported AI apps.** It speaks MCP (Model Context Protocol). Configure a compatible client to read and write the journal; the client decides when to invoke those tools. Claude Desktop and Cursor local examples are below. Hosted-provider setup is documented separately.
 - **Tamper-evident.** Every entry carries a fingerprint (a SHA-256 hash) of itself plus the entry before it, like links in a chain. If anyone edits or deletes an old entry, `verify` catches it and points to where.
-- **Append-only.** Entries are never edited or deleted. A correction is simply a new entry.
-- **Stamped in order.** Each entry records the time (UTC) plus a "tick": the number of 25-millisecond steps since 1970, which gives every entry a precise place in the timeline.
+- **Append-only records.** The journal API adds records rather than editing old ones. A correction is a new entry, preserving what was originally recorded.
+- **Dated and ordered.** Writes are serialized into journal order. Each entry also records UTC time and a 25-millisecond time coordinate, `floor(milliseconds ÷ 25)`. That timestamp bucket is separate from record order; it does not establish cross-device clock accuracy or cause and effect.
 
 ### What the AI gets (the tools)
 
@@ -46,13 +58,13 @@ See [Continue and origin contract](hosted/CONTINUE.md) for arguments, hash compa
 
 ---
 
-## 2-minute install
+## Run the local journal
 
 You need **Node.js 20 or newer** ([nodejs.org](https://nodejs.org), LTS version recommended).
 
 ```bash
 # 1. Get the code
-git clone https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git
+git clone --branch chatgpt/private-journal-service https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git
 cd Kairos-Bridge-AI-Journal
 
 # 2. Install and build
@@ -64,7 +76,7 @@ node dist/src/cli.js init
 node dist/src/cli.js stats
 ```
 
-Then connect your AI app (below) and restart the app. In a new chat, ask: *"Check my journal, then remember that I prefer short answers."*
+Then configure a supported AI app (below) and restart it. In a new chat, ask: *"Check my journal, then remember that I prefer short answers."*
 
 > **If `npm install` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
 
@@ -136,14 +148,14 @@ node dist/src/server.js --http --port 8787
 - With no token set, it accepts requests only when they're addressed to `localhost`/`127.0.0.1`. That blocks web pages from reaching it through DNS tricks. To accept a tunnel's hostname without a token, list it in `KAIROS_JOURNAL_ALLOWED_HOSTS`, though using a token is strongly recommended.
 - Endpoint: `POST /mcp` (MCP Streamable HTTP, stateless). `GET /healthz` returns `{"ok":true}`.
 
-What each app needs, as of October 2026 (check the linked docs, since these change often):
+The following table describes the **local package and its HTTP mode**, based on the October 2026 setup notes. Provider interfaces and account availability change; check the linked provider documentation. The separate [hosted pilot](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md) implements account sign-in and has its own provider acceptance records.
 
-| App | How it connects | Works with this server today? |
+| App | How it connects | Documented local-package path |
 |---|---|---|
 | Claude Desktop | Local (stdio) | Yes, config above. |
 | Cursor | Local (stdio), or a URL with custom headers | Yes. For HTTP use `"url": "http://127.0.0.1:8787/mcp"` and `"headers": {"Authorization": "Bearer ${env:KAIROS_JOURNAL_TOKEN}"}` (see `examples/cursor-mcp-http.json`). |
 | Claude (web/desktop) custom connectors | From Anthropic's cloud, public HTTPS URL; sign-in via OAuth, none, or fixed request headers | Possible through a tunnel you run (e.g. Cloudflare Tunnel, ngrok, Tailscale Funnel) with the token in a request header. Anthropic's developer docs mark fixed-header auth as beta, so it may not appear for every account. Free plans allow one custom connector. [Docs](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) |
-| ChatGPT | From OpenAI's cloud, public HTTPS URL (or OpenAI's Secure MCP Tunnel); auth is OAuth or none | **Not yet with a token.** ChatGPT offers OAuth or no auth, and this server doesn't implement OAuth. Full read and write MCP is limited to Business, Enterprise and Edu workspaces on the web; Pro gets read/fetch only in developer mode. [Docs](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) |
+| ChatGPT | From OpenAI's cloud, public HTTPS URL (or OpenAI's Secure MCP Tunnel); auth is OAuth or none | **This local HTTP mode does not implement OAuth.** Its bearer-token setup is separate from the hosted pilot's documented ChatGPT sign-in and read/write path. Check current ChatGPT account requirements in the linked documentation. [Docs](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) |
 
 Never expose the HTTP mode to the internet without a token. Anyone who reaches it can read your journal.
 
@@ -161,8 +173,9 @@ The folder is created private to you (permissions `700`, file `600` on macOS/Lin
 
 ## Privacy
 
-- **In stdio mode (the default), nothing leaves your machine.** The server makes no network connections at all. It reads and writes one local file.
-- What the server returns does go to the AI app you connected, and from there to that app's company, the same as anything else you type into that app. Only connect apps you trust with the contents of your journal.
+- **Local mode stores the journal on your computer.** The stdio server makes no network connections of its own; it reads and writes the local file.
+- **Connected AI apps receive the notes they retrieve.** If that app uses a cloud provider, those notes are processed under the provider's policies. Connect apps you trust with your journal.
+- **Account-service storage follows the operator's deployment.** The adapter keeps per-account journals under its configured data directory, on the computer or server where it runs. Its account controls, active deletion and recovery-copy retention are documented in the [service adapter](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md#revocation-retention-and-integrity-details). The managed pilot is one installation; an AI connection alone does not establish where a journal is stored.
 - The AI is told never to save secrets, and the server rejects text that clearly looks like a password, API key, private key, payment card or Social Security number. That check is a safety net, not a guarantee.
 - The AI is also told that journal entries are notes, not instructions, so it doesn't obey text that someone slipped into an entry.
 
@@ -255,6 +268,14 @@ examples/         ready-to-edit configs for Claude Desktop and Cursor
 - The file isn't encrypted beyond your computer's own disk encryption (FileVault, BitLocker).
 - Tamper evidence proves the history wasn't changed **after** it was written. It can't stop someone with access to your computer from rewriting the entire chain from scratch. To guard against that, save the chain head hash (`verify` prints it) somewhere else from time to time.
 - No sync between computers yet. Copy the file, or put the folder in a synced drive (with only one computer writing at a time).
+
+## Related patent work
+
+**Patent pending:** *Harmonic Orchestration System for AI Agents*, U.S. application **19/860,331**. Inventor: **Steffan Douglas Haskins**. Related provisional application: **63/912,083**.
+
+The utility application's submission and payment were acknowledged by the USPTO on November 2, 2026. The application concerns related orchestration work; this notice does not assert that every Journal feature is covered or that a patent has been granted. The earlier provisional references in the license explanation below are retained separately from this current filing update.
+
+Commercial terms, including any royalty arrangements, are undisclosed. The published software license governs the rights it grants.
 
 ## License
 
