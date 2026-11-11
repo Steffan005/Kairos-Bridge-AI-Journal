@@ -10,18 +10,18 @@ Created by **Steffan Douglas Haskins**. Copyright (C) 2026 Steffan Douglas Haski
 
 ## Start here
 
-Choose the part of Kairos you want to use or inspect. These are separate components with different setup and availability.
+Start with the [setup guide](START_HERE.md) or choose the part of Kairos you want to use.
 
 | Component | What it does | Availability and source |
 |---|---|---|
-| **Local Journal on main** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | Public source, baseline local package v0.1.0. [Install from source](#run-the-local-journal). |
-| **Extended Journal engine** | Adds project briefings, explicit corrections/resolutions and addressed handoffs to the engine used by local MCP clients and the account adapter. | [Public engine source and setup](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/chatgpt/private-journal-service) on `chatgpt/private-journal-service`. These additions are not in the older main snapshot. |
-| **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md). The managed invited pilot is one deployment. |
-| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
+| **Local Journal engine** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | [Run it locally](#run-the-local-journal). Your journal is a file on the computer running the engine. |
+| **Project continuation** | Source-linked project briefings, explicit corrections/resolutions and addressed handoffs work through the local MCP engine as well as the account adapter. | [Continuation contract](hosted/CONTINUE.md). The same continuation tools work with local MCP clients. |
+| **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](hosted/README.md). The managed invited pilot is one deployment. |
+| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). The owner accepted TestFlight 0.1.0 build 7 on October 15, 2026 using the configured account service. Independent onboarding and public App Store release remain ahead. |
 
-The instructions below describe the **baseline local package on main**. For local project continuation, use the extended engine on the public implementation branch linked above. The optional account adapter stores per-account files under its operator-selected data directory; its deployment can be local or self-hosted. The iPhone app has separate source and a configured service connection.
+The instructions below run **Kairos Journal locally** without an account. The optional account adapter stores per-account files under an operator-selected data directory on the computer or server where it runs. The iPhone app has separate source and a configured service connection.
 
-For a guided overview, see [Start here](START_HERE.md).
+For optional sign-in and remote-client access, begin with the [account adapter](hosted/README.md). The [Continue contract](hosted/CONTINUE.md) covers local-engine project briefings and addressed handoffs as well as service use.
 
 ---
 
@@ -39,19 +39,28 @@ For a guided overview, see [Start here](START_HERE.md).
 |---|---|
 | `journal_wake` | At the start of a conversation. Returns a short briefing: your pinned entries (who you are, what you prefer) plus the most recent notes, capped at about 6,000 characters. |
 | `journal_write` | When it learns something you'd want remembered (a preference, a fact, a decision, a short session summary). It's told never to write secrets, and the server also refuses obvious ones (passwords, API keys, card numbers and similar). |
-| `journal_search` | When you mention something from the past. Searches by word across every entry. |
+| `journal_continue` | When you ask to resume a named project. Returns a bounded project briefing with source IDs, recorded decisions, explicit open work and addressed handoffs. Use `view: "history"` for original newest-first notes. |
+| `journal_search` | When you mention something from the past. Searches by word across every entry, with an optional exact project filter. Relevance order is separate from chronology. |
 | `journal_verify` | When you ask "is my journal intact?" It re-checks every fingerprint and link. |
 | `journal_export` | When you ask for a backup. Saves JSON or Markdown in a folder you own and never overwrites an existing file. |
 | `journal_pin` / `journal_unpin` | Mark an entry to appear in every briefing, or stop showing it. Nothing gets deleted. |
 | `journal_about` | When you ask who made it, what the license is, or where the source code is. (The same information is available as the MCP resource `kairos-journal://about` and, in HTTP mode, at `GET /about`.) |
 
-Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (who wrote it, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`.
+Each entry contains: `id`, `created_at` (ISO time, UTC), `tick` (= floor(milliseconds ÷ 25)), `actor` (declared attribution, e.g. `claude`, `chatgpt`, `steffan`), `kind` (`note`, `fact`, `preference`, `decision` or `summary`), `text`, `tags`, `parent_hash` (the previous entry's hash, or 64 zeros for the first entry) and `hash`. For project notes, use a tag such as `project-kitchen`; ask `journal_continue` for `kitchen` or `project-kitchen` to retrieve that exact project tag.
+
+### Continuing work with evidence
+
+Continue now selects recorded goals and decisions, explicitly recorded open questions/actions, handoffs addressed to an actor, and recent activity from the exact project. Corrections and resolutions use explicit record IDs; original notes remain in History. Old prose is never automatically promoted into a current task. `journal_wake({project})` uses the same briefing.
+
+An optional `continuity` object records the role, actor, recipient and correction/resolution links. Hosted writes also receive a server-assigned `write_origin`, based on the authenticated OAuth client or owner session. It stays separate from the declared Author label and participates in the new entry's hash. Older entries retain their original hashes and receive no invented origin. Connection evidence does not identify the underlying model or establish the truth of a note. Actor selection routes retrieval; it does not create private access lanes.
+
+See [Continue and origin contract](hosted/CONTINUE.md) for arguments, hash compatibility, limits and acceptance evidence. Some AI apps cache MCP tool definitions; refresh their tool list to expose new optional fields. Ordinary project Continue calls use the new briefing immediately after server deployment.
 
 ---
 
 ## Run the local journal
 
-You need **Node.js 20 or newer** ([nodejs.org](https://nodejs.org), LTS version recommended).
+Use a supported [Node.js LTS release](https://nodejs.org/en/about/previous-releases), such as Node.js 24.
 
 ```bash
 # 1. Get the code
@@ -72,6 +81,10 @@ Then configure a supported AI app (below) and restart it. In a new chat, ask: *"
 > **If `npm install` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
 
 ---
+
+### Upgrading an existing local journal
+
+Close any AI clients or other processes using the journal. Run the older CLI's `verify` command and make a backup of the stopped journal file before first opening it with the newer engine. If SQLite leaves a `-wal` file alongside it, use a consistent SQLite backup rather than copying only the main file. The newer engine preserves previous records and hashes. If you need to go back, restore the pre-upgrade backup to a separate path and retain the newer journal so its later entries remain available. The older verifier cannot verify new entries carrying continuation or authenticated delivery fields.
 
 ## Connect it to your AI app
 
@@ -217,18 +230,20 @@ Reproduce it: `npm run bench` (or `node dist/bench/storage-bench.js --entries 30
 ## For developers
 
 - **Stack:** TypeScript, Node 20+, [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) 1.32, [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) 12 with the FTS5 full-text index (Porter stemming), and `zod` for input schemas.
-- **Hash rule:** `hash = sha256( JSON.stringify(["kairos-journal/v1", id, created_at, tick, actor, kind, text, tags, parent_hash]) )`, as lowercase hex. The first entry's `parent_hash` is `"0" × 64`. A JSON export carries everything needed to re-verify the chain in any language without SQLite.
+- **Hash rule:** The Journal hashes a versioned JSON array with SHA-256. Older records retain their original bytes and hashes. New entries with import provenance, authenticated delivery or continuity fields use the corresponding [canonical serialization](src/canonical.ts). The first entry's `parent_hash` is 64 zeros. A JSON export includes the fields needed to check the chain.
 - **Append-only at three levels:** there are no delete or edit tools; database triggers abort any UPDATE or DELETE; and the hash chain reveals anyone who bypasses the triggers with raw file access. `verify` also catches rows removed from the middle (gaps in sequence numbers) or from the end (SQLite's sequence counter runs ahead of the last row).
 - **Pins** live in a small separate table outside the chain, because pinning is a display preference and doesn't change what was written.
 - **Concurrency:** WAL mode with a 5-second busy timeout. Each write is one immediate transaction, so several apps can share one journal.
-- **Tests:** `npm test` runs 29 tests: chain integrity, tamper detection (edit, re-hash, delete-middle, delete-tail), search, the wake size cap, the secret filter, export, an end-to-end MCP client over stdio (list tools → write → wake → search → verify), HTTP mode (bearer token, Host checks, refusal to bind publicly without a token), and licensing (the LICENSE file is the unmodified official text, every source file has its SPDX header, and `journal_about`, `/about` and the server info report the license and source location).
+- **Tests:** `npm test` runs the local Journal suite, including chain integrity, tamper detection (edit, re-hash, delete-middle, delete-tail), search, the wake size cap, the secret filter, export, an end-to-end MCP client over stdio (list tools → write → wake → search → verify), HTTP mode (bearer token, Host checks, refusal to bind publicly without a token), and licensing (the LICENSE file is the unmodified official text, every source file has its SPDX header, and `journal_about`, `/about` and the server info report the license and source location).
 
 ```
 src/
   server.ts       MCP server entry (stdio by default, --http for Streamable HTTP)
-  tools.ts        the 8 MCP tools, the about resource and the instructions the AI sees
+  tools.ts        the 9 MCP tools, the about resource and the instructions the AI sees
   about.ts        copyright, license, attribution and source location (AGPL notices)
-  journal.ts      storage: SQLite schema, hash chain, wake, search, verify, export
+  journal.ts      storage: SQLite schema, hash chain, wake, project continuation, search, verify, export
+  continuity.ts   validated project roles, actor aliases and trusted origin metadata
+  projectBriefing.ts bounded project retrieval with explicit handoff/status links
   canonical.ts    canonical serialization, SHA-256, 25 ms tick
   secrets.ts      best-effort "this looks like a secret" filter
   http.ts         Streamable HTTP transport with bearer token and Host checks
@@ -252,7 +267,7 @@ examples/         ready-to-edit configs for Claude Desktop and Cursor
 
 ## Known limitations (v0.1)
 
-- The standalone local HTTP server supports bearer-token authentication. Use the [optional account adapter](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md) for OAuth connections. Check your AI app’s current account and connection requirements.
+- The standalone local HTTP server supports bearer-token authentication. Use the [optional account adapter](hosted/README.md) for OAuth connections. Check your AI app’s current account and connection requirements.
 - The secret filter only catches obvious patterns. It can't recognize private facts written in plain words.
 - The file isn't encrypted beyond your computer's own disk encryption (FileVault, BitLocker).
 - Tamper evidence proves the history wasn't changed **after** it was written. It can't stop someone with access to your computer from rewriting the entire chain from scratch. To guard against that, save the chain head hash (`verify` prints it) somewhere else from time to time.

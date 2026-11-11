@@ -21,6 +21,8 @@
  * notice above must be preserved. See the NOTICE file for the full terms.
  */
 import { createHash } from "node:crypto";
+import type { ContinuityRecord, WriteOrigin } from "./continuity.js";
+export type { ContinuityRecord, WriteOrigin } from "./continuity.js";
 
 /** The parent_hash of the very first entry in a journal. */
 export const GENESIS_HASH = "0".repeat(64);
@@ -35,6 +37,21 @@ export const KINDS = ["note", "fact", "preference", "decision", "summary"] as co
 export type Kind = (typeof KINDS)[number];
 
 /** The fields that are covered by an entry's hash. */
+export interface HistoricalProvenance {
+  version: 1;
+  source_store: string;
+  source_id: string;
+  original_timestamp: string;
+  original_actor: string | null;
+  source_file_sha256: string;
+  canonical_actor: string | null;
+  timezone: string;
+  chronology_key: string;
+  imported_at: string;
+  imported_by: string;
+  source_metadata?: Record<string, unknown>;
+}
+
 export interface HashedFields {
   id: string;
   created_at: string; // ISO 8601 UTC, e.g. 2026-10-07T14:42:00.123Z
@@ -44,6 +61,9 @@ export interface HashedFields {
   text: string;
   tags: string[];
   parent_hash: string; // previous entry's hash, or GENESIS_HASH
+  provenance?: HistoricalProvenance;
+  write_origin?: WriteOrigin;
+  continuity?: ContinuityRecord;
 }
 
 /**
@@ -56,7 +76,7 @@ export interface HashedFields {
  * spec-compliant JS engine, and easy to reproduce in any other language.
  */
 export function canonicalize(f: HashedFields): string {
-  return JSON.stringify([
+  const base: unknown[] = [
     CHAIN_VERSION,
     f.id,
     f.created_at,
@@ -66,7 +86,27 @@ export function canonicalize(f: HashedFields): string {
     f.text,
     f.tags,
     f.parent_hash,
-  ]);
+  ];
+  // Old entries retain exactly their original bytes, including history-v1.
+  if (f.provenance) {
+    const p = f.provenance;
+    base[0] = "kairos-journal/history-v1";
+    base.push([p.version, p.source_store, p.source_id, p.original_timestamp,
+      p.original_actor, p.source_file_sha256, p.canonical_actor, p.timezone,
+      p.chronology_key, p.imported_at, p.imported_by,
+      p.source_metadata ? Object.keys(p.source_metadata).sort().map(key => [key, p.source_metadata![key]]) : null]);
+  }
+  if (f.write_origin !== undefined || f.continuity !== undefined) {
+    base[0] = "kairos-journal/continuity-v1";
+    // Reserve the provenance slot even for an ordinary new entry.
+    if (!f.provenance) base.push(null);
+    const o = f.write_origin;
+    base.push(o ? [o.version, o.channel, o.client_id, o.provider, o.received_at] : null);
+    const c = f.continuity;
+    base.push(c ? [c.version, c.role, c.actor_id ?? null, c.recipient ?? null,
+      c.supersedes ?? null, c.resolves ?? null] : null);
+  }
+  return JSON.stringify(base);
 }
 
 export function hashEntry(f: HashedFields): string {

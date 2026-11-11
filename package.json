@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node -e \"for (const f of ['dist/src/cli.js','dist/src/server.js']) require('fs').chmodSync(f, 0o755)\"",
-    "test": "npm run build && node --test --test-concurrency=1 dist/test/",
+    "test": "npm run build && node scripts/run-tests.mjs dist/test",
     "bench": "npm run build && node dist/bench/storage-bench.js --entries 300000",
     "start": "node dist/src/server.js"
   },
