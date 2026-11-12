@@ -1,6 +1,6 @@
 {
   "name": "kairos-bridge-ai-journal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Kairos-Bridge AI Journal: a portable, user-owned memory journal for AI apps, served over MCP. Your journal lives on your own machine.",
   "license": "AGPL-3.0-or-later",
@@ -39,7 +39,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "better-sqlite3": "^12.11.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "main": "dist/src/server.js",
   "keywords": [
