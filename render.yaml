@@ -1,0 +1,29 @@
+# Proposed invited staging only. Review Render's price before creating paid resources.
+services:
+  - type: web
+    name: kairos-journal-staging
+    runtime: node
+    repo: https://github.com/Steffan005/Kairos-Bridge-AI-Journal
+    branch: chatgpt/private-journal-service
+    region: virginia
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: npm ci --include=dev && npm --prefix hosted ci --include=dev && npm --prefix hosted run build
+    startCommand: npm --prefix hosted run start:staging
+    healthCheckPath: /healthz
+    disk:
+      name: kairos-staging-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.5
+      - key: NODE_ENV
+        value: production
+      - key: KAIROS_STAGING_DATA
+        value: /var/data/kairos
+      - key: KAIROS_STAGING_SECRET
+        generateValue: true
+      - key: KAIROS_STAGING_INVITE
+        generateValue: true

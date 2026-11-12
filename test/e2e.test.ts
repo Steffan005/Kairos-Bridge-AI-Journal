@@ -35,6 +35,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.resolve(here, "../src/server.js");
 const EXPECTED_TOOLS = [
   "journal_about",
+  "journal_continue",
   "journal_export",
   "journal_pin",
   "journal_search",
@@ -77,7 +78,7 @@ describe("MCP over stdio (end to end)", () => {
       assert.equal(saved.entry.actor, "e2e-test-client", "defaults actor to the client's name");
       assert.equal(saved.entry.pinned, true);
 
-      const w2 = await client.callTool({ name: "journal_write", arguments: { text: "Filed patent paperwork plan with Claude.", kind: "decision", actor: "claude" } });
+      const w2 = await client.callTool({ name: "journal_write", arguments: { text: "Filed patent paperwork plan with Claude.", kind: "decision", actor: "claude", tags: ["project-patent"] } });
       assert.ok(!w2.isError);
 
       const secret = await client.callTool({ name: "journal_write", arguments: { text: "api key sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ" } });
@@ -96,6 +97,13 @@ describe("MCP over stdio (end to end)", () => {
 
       const s = await client.callTool({ name: "journal_search", arguments: { query: "patent" } });
       assert.equal(JSON.parse(textOf(s)).count, 1);
+
+      const continuation = await client.callTool({ name: "journal_continue", arguments: { project: "Patent" } });
+      assert.ok(!continuation.isError, textOf(continuation));
+      assert.match(textOf(continuation), /Filed patent paperwork plan/);
+      assert.match(textOf(continuation), /claude/);
+      assert.match(textOf(continuation), /decision/);
+      assert.doesNotMatch(textOf(continuation), /grandma/);
 
       const v = await client.callTool({ name: "journal_verify", arguments: {} });
       const report = JSON.parse(textOf(v));
@@ -215,6 +223,33 @@ describe("MCP over Streamable HTTP", () => {
       const v = await client.callTool({ name: "journal_verify", arguments: {} });
       assert.equal(JSON.parse(textOf(v)).ok, true);
       await client.close();
+
+      // A fresh MCP client should recover only the requested project's notes.
+      const writer = new Client({ name: "http-project-writer", version: "1.0.0" });
+      await writer.connect(
+        new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: "Bearer test-token-123" } } }),
+      );
+      const kitchen = await writer.callTool({
+        name: "journal_write",
+        arguments: { text: "Synthetic kitchen note: blue tile selected.", tags: ["project-kitchen"] },
+      });
+      assert.ok(!kitchen.isError, textOf(kitchen));
+      const garden = await writer.callTool({
+        name: "journal_write",
+        arguments: { text: "Synthetic garden note: tomato beds planned.", tags: ["project-garden"] },
+      });
+      assert.ok(!garden.isError, textOf(garden));
+      await writer.close();
+
+      const fresh = new Client({ name: "http-fresh-chat", version: "1.0.0" });
+      await fresh.connect(
+        new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: "Bearer test-token-123" } } }),
+      );
+      const resumed = await fresh.callTool({ name: "journal_continue", arguments: { project: "kitchen" } });
+      assert.ok(!resumed.isError, textOf(resumed));
+      assert.match(textOf(resumed), /blue tile selected/);
+      assert.doesNotMatch(textOf(resumed), /tomato beds planned/);
+      await fresh.close();
     } finally {
       proc.kill();
     }
