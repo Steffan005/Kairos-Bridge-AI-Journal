@@ -33,7 +33,7 @@ export function previewSettings(options: PreviewOptions): ServiceSettings {
   if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.protocol !== "http:") {
     throw new Error("The local preview requires a loopback HTTP base URL");
   }
-  return { ...options, baseURL: url.origin, kind: "local-private-preview", listenHost: url.hostname.replace(/^\[|\]$/g, ""), listenPort: Number(url.port || 80), sourceURL: source + "chatgpt/private-journal-service" };
+  return { ...options, baseURL: url.origin, kind: "local-private-preview", listenHost: url.hostname.replace(/^\[|\]$/g, ""), listenPort: Number(url.port || 80), sourceURL: source + "main" };
 }
 export function stagingSettings(options: StagingOptions): ServiceSettings {
   const url = origin(options.baseURL);
