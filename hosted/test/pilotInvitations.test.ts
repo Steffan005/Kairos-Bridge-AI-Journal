@@ -15,16 +15,16 @@ import { MUSE_CONNECTOR_CLIENT_ID } from "../src/auth.js";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createStaging } from "../src/service.js";
-import { invitationHash, parsePilotInvitations, pilotInvitationsFromEnvironment } from "../src/pilotInvitations.js";
+import { invitationBinding, invitationHash, parsePilotInvitations, pilotInvitationsFromEnvironment } from "../src/pilotInvitations.js";
 import { page } from "../src/pages.js";
 import type { AccountMail } from "../src/accountAccess.js";
 
 test("pilot invitations require explicit valid configuration and join pages never embed a code", () => {
-  const invitation = { email: "alice@beta-fixture.net", codeHash: "a".repeat(64), expiresAt: Date.now() + 60_000 };
+  const invitation = { bindingHash: "b".repeat(64), codeHash: "a".repeat(64), expiresAt: Date.now() + 60_000 };
   assert.equal(pilotInvitationsFromEnvironment({}), undefined);
   assert.equal(parsePilotInvitations([invitation]).length, 1);
-  for (const input of [[], {}, [invitation, invitation], [{ ...invitation, email: "Alice@beta-fixture.net" }],
-    [{ ...invitation, email: "owner@example.test" }], [{ ...invitation, expiresAt: NaN }], [{ ...invitation, code: "secret" }]]) {
+  for (const input of [[], {}, [invitation, invitation], [{ ...invitation, bindingHash: "wrong" }],
+    [{ ...invitation, email: "not-configured" }], [{ ...invitation, expiresAt: NaN }], [{ ...invitation, code: "secret" }]]) {
     assert.throws(() => parsePilotInvitations(input));
   }
   const output = page("join", undefined, { staging: true, accountRecovery: true });
@@ -32,6 +32,9 @@ test("pilot invitations require explicit valid configuration and join pages neve
   assert.match(output.html, /api\/pilot\/register/);
   assert.doesNotMatch(output.html, /localStorage|KAIROS_STAGING_INVITE|emailVerified:true/);
   assert.match(output.csp, /form-action 'self'/);
+  const privacy = page("privacy", undefined, { staging: true });
+  assert.match(privacy.html, /Delete account removes/);
+  assert.match(privacy.html, /seven-day disk snapshot window/);
 });
 
 test("operator preparation writes private files outside Git and never prints the code", () => {
@@ -61,19 +64,19 @@ test("per-person signup, concurrency, restart, verification and isolation", { ti
   const expired = randomBytes(32).toString("base64url"), unused = randomBytes(32).toString("base64url"), emailA = "alice@beta-fixture.net", emailB = "bob@beta-fixture.net";
   const mail: AccountMail[] = []; // Local delivery capture only. No external email.
   const options = { baseURL, port, directory, secret: randomBytes(32).toString("hex"), inviteCode: randomBytes(32).toString("hex"),
-    sourceRevision: "1".repeat(40), accountDelivery: { send: async (message: AccountMail) => { mail.push(message); } },
+    sourceRevision: "1".repeat(40), trustedEdge: "render-cloudflare" as const, accountDelivery: { send: async (message: AccountMail) => { mail.push(message); } },
     pilotInvitations: [
-      { email: emailA, codeHash: invitationHash(codeA), expiresAt: Date.now() + 60_000 },
-      { email: emailB, codeHash: invitationHash(codeB), expiresAt: Date.now() + 60_000 },
-      { email: "expired@beta-fixture.net", codeHash: invitationHash(expired), expiresAt: Date.now() - 1 },
-      { email: "unused@beta-fixture.net", codeHash: invitationHash(unused), expiresAt: Date.now() + 60_000 },
+      { bindingHash: invitationBinding(emailA, codeA), codeHash: invitationHash(codeA), expiresAt: Date.now() + 60_000 },
+      { bindingHash: invitationBinding(emailB, codeB), codeHash: invitationHash(codeB), expiresAt: Date.now() + 60_000 },
+      { bindingHash: invitationBinding("expired@beta-fixture.net", expired), codeHash: invitationHash(expired), expiresAt: Date.now() - 1 },
+      { bindingHash: invitationBinding("unused@beta-fixture.net", unused), codeHash: invitationHash(unused), expiresAt: Date.now() + 60_000 },
     ],
   };
   let service = await createStaging(options); await service.listen();
   const request = (path: string, body?: unknown, cookie?: string, overrides: Record<string, string> = {}): Promise<Response> => new Promise((resolve, reject) => {
     const req = http.request(`http://127.0.0.1:${port}${path}`, {
       method: body === undefined ? "GET" : "POST", headers: { host: "friends.example.test", "x-forwarded-proto": "https", origin: baseURL,
-        "content-type": "application/json", connection: "close", ...(cookie ? { cookie } : {}), ...overrides },
+        "content-type": "application/json", "cf-connecting-ip": "203.0.113.7", connection: "close", ...(cookie ? { cookie } : {}), ...overrides },
     }, res => {
       const chunks: Buffer[] = []; res.on("data", chunk => chunks.push(Buffer.from(chunk)));
       res.on("end", () => { const headers = new Headers(); for (let i = 0; i < res.rawHeaders.length; i += 2) headers.append(res.rawHeaders[i], res.rawHeaders[i + 1]);
@@ -123,6 +126,10 @@ test("per-person signup, concurrency, restart, verification and isolation", { ti
       const owner = await (await request("/api/journal", undefined, ownerCookie)).json(); assert.equal(owner.count, 1); assert.match(owner.entries[0].text, /OWNER NOTE/);
     });
     await t.test("a second recipient has an independent account and journal", async () => {
+      for (let i = 0; i < 31; i++) {
+        const denied = await request("/api/pilot/register", { email: emailB, invite_code: "invalid", password }, undefined, { "cf-connecting-ip": "203.0.113.200" });
+        assert.equal(denied.status, i < 20 ? 403 : 429);
+      }
       const created = await register(emailB, codeB); assert.equal(created.status, 200); bobCookie = cookie(created);
       const journal = await (await request("/api/journal", undefined, bobCookie)).json(); assert.equal(journal.count, 0); assert.deepEqual(journal.connections, []);
       const alice = await (await request("/api/journal", undefined, aliceCookie)).json(); assert.equal(alice.count, 1); assert.match(alice.entries[0].text, /ALICE ONLY/);

@@ -106,10 +106,14 @@ function describe(directory: string): Description {
   let users: string[], accounts: Account[];
   try {
     const tables = (auth.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map(r => r.name);
-    if (JSON.stringify(tables.filter(name => name !== "kairos_pilot_invitations")) !== JSON.stringify(AUTH_TABLES)) fail("Authentication schema changed; recovery requires an explicit migration");
+    if (JSON.stringify(tables.filter(name => !["kairos_pilot_invitations", "kairos_account_deletions"].includes(name))) !== JSON.stringify(AUTH_TABLES)) fail("Authentication schema changed; recovery requires an explicit migration");
     if (tables.includes("kairos_pilot_invitations")) {
       const columns = (auth.pragma("table_info(kairos_pilot_invitations)") as Array<{ name: string }>).map(c => c.name);
-      if (JSON.stringify(columns) !== JSON.stringify(["codeHash", "email", "expiresAt", "state", "userId"])) fail("Unsupported pilot invitation recovery schema");
+      if (JSON.stringify(columns) !== JSON.stringify(["codeHash", "bindingHash", "expiresAt", "state", "userId"])) fail("Unsupported pilot invitation recovery schema");
+    }
+    if (tables.includes("kairos_account_deletions")) {
+      const columns = (auth.pragma("table_info(kairos_account_deletions)") as Array<{ name: string }>).map(c => c.name);
+      if (JSON.stringify(columns) !== JSON.stringify(["userId", "requestedAt"]) || auth.prepare("SELECT 1 FROM kairos_account_deletions LIMIT 1").get()) fail("Finish pending account erasures before recovery");
     }
     const versions = auth.prepare("SELECT version FROM kairos_auth_schema").all() as Array<{ version: string }>;
     if (versions.length !== 1 || versions[0].version !== AUTH_SCHEMA) fail("Unsupported authentication schema");

@@ -22,7 +22,7 @@ if (!within || (within !== '..' && !within.startsWith('..' + sep) && !isAbsolute
 const code = randomBytes(32).toString('base64url');
 const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 mkdirSync(directory, { mode: 0o700 }); // Refuse an existing output directory.
-const manifest = [{ email, codeHash: createHash('sha256').update(code).digest('hex'), expiresAt }];
+const manifest = [{ bindingHash: createHash('sha256').update(email + '\0' + code).digest('hex'), codeHash: createHash('sha256').update(code).digest('hex'), expiresAt }];
 writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 writeFileSync(join(directory, 'invitation.txt'), [
   'PRIVATE DRAFT — do not send until all beta gates pass.',

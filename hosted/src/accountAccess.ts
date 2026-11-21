@@ -74,7 +74,7 @@ class AccountLimits {
  * Records use the existing verification table, which recovery restores clear.
  */
 export function createAccountAccess(options: {
-  auth: KairosAuth; database: Database.Database; accounts: Accounts; baseURL: string; delivery?: AccountDelivery;
+  auth: KairosAuth; database: Database.Database; accounts: Accounts; baseURL: string; delivery?: AccountDelivery; deleteAccount?: (userId: string) => void;
   /** Track already-started neutral reset delivery so recovery/close drains it. */
   backgroundTaskHandler?: (task: Promise<unknown>) => void;
 }) {
@@ -151,7 +151,7 @@ export function createAccountAccess(options: {
       return json({ id: user.id, email: user.email, emailVerified: user.emailVerified === 1,
         recoveryAvailable: !!delivery && eligible(user), emailChangeAvailable: !!delivery });
     }
-    if (!["/api/account/email-change", "/api/account/confirm-email", "/api/account/forgot-password", "/api/account/reset-password"].includes(path)) {
+    if (!["/api/account/delete", "/api/account/email-change", "/api/account/confirm-email", "/api/account/forgot-password", "/api/account/reset-password"].includes(path)) {
       throw new AccessError(404, "Account route not found");
     }
     if (method !== "POST") throw new AccessError(405, "Use POST");
@@ -161,6 +161,26 @@ export function createAccountAccess(options: {
     if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) throw new AccessError(400, "Provide a JSON object");
     const input = request.body as Record<string, unknown>;
 
+    if (path === "/api/account/delete") {
+      const session = await owner(headers);
+      limits.require(`password:${session.user.id}`, 5);
+      if (!options.deleteAccount) throw new AccessError(503, "Account deletion is unavailable");
+      if (typeof input.currentPassword !== "string" || !input.currentPassword || input.currentPassword.length > 128 || typeof input.confirmEmail !== "string") {
+        throw new AccessError(400, "Enter your current password and sign-in email to confirm deletion");
+      }
+      return accounts.locked(session.user.id, async () => {
+        const user = state(session.user.id);
+        if (!user?.password || !activeSession(session)) throw new AccessError(401, "Please sign in to Kairos");
+        if (input.confirmEmail !== user.email) throw new AccessError(400, "Type your exact sign-in email to confirm deletion");
+        const before = fingerprint(user);
+        try { await auth.api.verifyPassword({ headers, body: { password: input.currentPassword as string } }); }
+        catch { throw new AccessError(403, "Your current password could not be verified"); }
+        const current = state(user.id);
+        if (!activeSession(session) || !current || fingerprint(current) !== before) throw new AccessError(401, "Please sign in again");
+        options.deleteAccount!(user.id);
+        return json({ deleted: true, message: "Your active account, journal and AI access have been deleted. Protected recovery copies may retain earlier records." });
+      });
+    }
     if (path === "/api/account/email-change") {
       const session = await owner(headers);
       limits.require(`password:${session.user.id}`, 5);

@@ -15,7 +15,7 @@ After building the hosted package, an operator can run
 `node hosted/scripts/prepare-pilot-invitation.mjs --email RECIPIENT --out /PRIVATE/NEW/DIRECTORY`
 from the repository root. This creates files locally; it sends nothing. The new
 directory is private and must not already exist. `manifest.json` contains only
-the email, SHA-256 code hash and seven-day expiry; `invitation.txt` holds the
+opaque email/code binding and code digests plus seven-day expiry; `invitation.txt` holds the
 secret personal code. Keep both outside Git, public screenshots and chat logs.
 
 Combine approved manifest entries into the private `KAIROS_PILOT_INVITATIONS`
@@ -56,9 +56,14 @@ unsupported rollback and may revive older state.
 
 Signing out of Kairos preserves separately approved AI access. Disconnect all
 AI access stops future journal access and keeps notes. Providers may retain
-previously retrieved text. Active-journal deletion leaves the sign-in account
-and may leave hosting snapshots or protected recovery copies. This pilot has no
-new customer-retention promise, full account-erasure flow or scale guarantee.
+previously retrieved text. Delete journal leaves the sign-in account. Your account also offers permanent
+account deletion, confirmed with the exact sign-in email and current password;
+it removes the active journal, credentials, sessions, consent and token records.
+It preserves other users and shared client registrations. An interrupted erasure
+resumes before startup accepts requests, and captures refuse pending erasures.
+Older recovery bundles cannot restore against a changed account inventory.
+Hosting snapshots and protected recovery copies may retain earlier records;
+there is no guaranteed backup-erasure deadline or scale guarantee.
 
 ## Distribution gates
 
@@ -70,7 +75,7 @@ new customer-retention promise, full account-erasure flow or scale guarantee.
 - Deploy to the existing service only with the exact source recorded. Do not
   create paid resources, enable automatic deploys, or rotate existing secrets.
 - Test live enrollment with disposable operator-controlled email addresses,
-  including delivery, recovery, export and two-account isolation. Confirm the
+  including delivery, recovery, export, account deletion and two-account isolation. Confirm the
   owner's prior records and approved AI access still work afterward.
 - In App Store Connect, create an external group (for example, KAIROS Friends
   Pilot), select an eligible build, and complete Beta App Information and What
