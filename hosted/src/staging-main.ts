@@ -4,6 +4,7 @@
 import { createStaging } from "./service.js";
 import { createRecoveryControl } from "./recoveryControl.js";
 import { accountDeliveryFromEnvironment } from "./accountMail.js";
+import { pilotInvitationsFromEnvironment } from "./pilotInvitations.js";
 const baseURL = process.env.KAIROS_STAGING_URL ?? process.env.RENDER_EXTERNAL_URL;
 const directory = process.env.KAIROS_STAGING_DATA;
 const secret = process.env.KAIROS_STAGING_SECRET;
@@ -16,6 +17,7 @@ if (Boolean(recoverySocket) !== Boolean(recoveryOutput)) throw new Error("Set KA
 const accountDelivery = accountDeliveryFromEnvironment(baseURL);
 const staging = await createStaging({ baseURL, directory, secret, inviteCode, sourceRevision, port: Number(process.env.PORT ?? 10000),
   accountDelivery,
+  pilotInvitations: pilotInvitationsFromEnvironment(),
   ...(process.env.RENDER === "true" ? { trustedEdge: "render-cloudflare" as const } : {}),
 });
 let recovery: Awaited<ReturnType<typeof createRecoveryControl>> | undefined;

@@ -7,6 +7,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createAccountDeletion } from "../src/accountDeletion.js";
+import { captureBackup, captureDeletionWitness, restoreBackup } from "../src/recovery.js";
+import { existsSync } from "node:fs";
 import { Accounts } from "../src/accounts.js";
 import { AccessError, makeAuth, migrateAuth, verifyGrant } from "../src/auth.js";
 import { createAccountAccess, realAccountEmail, type AccountDelivery, type AccountMail } from "../src/accountAccess.js";
@@ -29,7 +32,8 @@ async function fixture(t: TestContext) {
   t.after(() => { database.close(); accounts.close(); rmSync(directory, { recursive: true, force: true }); });
   const messages: AccountMail[] = [];
   const delivery: AccountDelivery = { send: async message => { messages.push(message); } };
-  const access = createAccountAccess({ auth, database, accounts, baseURL, delivery });
+  const deleteAccount = createAccountDeletion(database, accounts);
+  const access = createAccountAccess({ auth, database, accounts, baseURL, delivery, deleteAccount });
   const requestAuth = (path: string, input?: unknown, cookie?: string) => auth.handler(new Request(baseURL + "/api/auth" + path, {
     method: input === undefined ? "GET" : "POST", headers: { origin: baseURL, ...(input === undefined ? { accept: "text/html" } : { "content-type": "application/json" }), ...(cookie ? { cookie } : {}) },
     ...(input === undefined ? {} : { body: JSON.stringify(input) }),
@@ -174,8 +178,10 @@ test("account challenges reject stale credentials, expired links, email races an
   const stale = tokenFrom(f.messages.at(-1)!);
   f.database.prepare('UPDATE "account" SET password = ? WHERE userId = ? AND providerId = ?').run(await f.context.password.hash(nextPassword), b.id, "credential");
   assert.equal((await f.request("/confirm-email", { token: stale }, b.cookie)).status, 400);
+  const winner = f.database.prepare('SELECT id FROM "user" WHERE email = ?').get(target) as { id: string } | undefined;
+  assert.ok(winner && [a.id, b.id].includes(winner.id));
   const reset = await f.resetLink(target);
-  f.database.prepare('UPDATE "user" SET email = ? WHERE id = ?').run("changed@recovery-fixture.org", a.id);
+  f.database.prepare('UPDATE "user" SET email = ? WHERE id = ?').run("changed@recovery-fixture.org", winner.id);
   assert.equal((await f.request("/reset-password", { token: reset, newPassword: nextPassword })).status, 400, "link binds current email and immutable owner");
   assert.equal((await f.request("/reset-password", { token: "malformed", newPassword: nextPassword })).status, 400);
   assert.equal((await f.request("/email-change", { newEmail: "x@example.test", currentPassword: nextPassword }, b.cookie)).status, 400);
@@ -242,4 +248,62 @@ test("account limits bound password checks and email delivery, and issuance awai
   let settled = false;
   const pending = f.request("/email-change", { newEmail: "delayed@recovery-fixture.org", currentPassword: password }, owner.cookie, { handler: delayed }).then(result => { settled = true; return result; });
   await sending; assert.equal(settled, false); complete(); assert.equal((await pending).status, 200);
+});
+
+
+test("password-confirmed account erasure is isolated, revokes stale grants and refuses backup resurrection", { timeout: 60_000 }, async t => {
+  const f = await fixture(t), owner = await f.signup("erase@example.test"), other = await f.signup("preserve@example.test");
+  for (const user of [owner, other]) {
+    const journal = Journal.open(f.accounts.path(user.id)); journal.write({ text: "SYNTHETIC " + user.id, actor: "you" }); journal.close();
+  }
+  const otherBytes = sha(readFileSync(f.accounts.path(other.id))), otherState = f.accounts.get(other.id);
+  const client = await (await f.requestAuth("/oauth2/register", { client_name: "Shared synthetic client", redirect_uris: ["https://ai.example.test/callback"],
+    token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], scope: "journal:read journal:write offline_access" })).json();
+  f.database.prepare('UPDATE "oauthClient" SET userId=? WHERE clientId=?').run(owner.id, client.client_id);
+  const { adapter } = f.context;
+  for (const user of [owner, other]) await adapter.create({ model: "oauthConsent", data: { clientId: client.client_id, userId: user.id,
+    scopes: ["journal:read", "journal:write"], createdAt: new Date(), updatedAt: new Date() } });
+  const token = async (id: string) => (await f.auth.api.signJWT({ body: { payload: { iss: f.baseURL + "/api/auth", aud: f.baseURL + "/mcp", sub: id,
+    azp: client.client_id, scope: "journal:read journal:write", kairos_epoch: f.accounts.get(id).epoch,
+    iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000)+900 } } })).token;
+  const stale = await token(owner.id), preserved = await token(other.id);
+  const options = { currentPassword: password, confirmEmail: "erase@example.test", userId: other.id };
+  assert.equal((await f.request("/delete", options)).status, 401);
+  assert.equal((await f.request("/delete", options, owner.cookie, { origin: "https://evil.example.test" })).status, 403);
+  assert.equal((await f.request("/delete", { ...options, currentPassword: "wrong" }, owner.cookie)).status, 403);
+  assert.equal((await f.request("/delete", { ...options, confirmEmail: "preserve@example.test" }, owner.cookie)).status, 400);
+  const bundle = join(f.directory, "..", "erase-backup-" + randomBytes(8).toString("hex"));
+  const witness = bundle + "-witness.json", restored = bundle + "-restore";
+  t.after(() => { rmSync(bundle,{recursive:true,force:true});rmSync(witness,{force:true});rmSync(restored,{recursive:true,force:true}); });
+  await captureBackup(f.directory, bundle, "1".repeat(40));
+  assert.equal((await f.request("/delete", options, owner.cookie)).status, 200);
+  assert.equal(existsSync(f.accounts.path(owner.id)), false);
+  for (const table of ["account", "session", "oauthConsent", "oauthAccessToken", "oauthRefreshToken"]) assert.equal((f.database.prepare(`SELECT count(*) n FROM "${table}" WHERE userId=?`).get(owner.id) as { n:number }).n,0);
+  assert.equal(f.database.prepare('SELECT id FROM "user" WHERE id=?').get(owner.id),undefined);
+  assert.equal(f.accounts.db.prepare('SELECT user_id FROM accounts WHERE user_id=?').get(owner.id),undefined);
+  assert.equal((await f.requestAuth("/sign-in/email", { email: "erase@example.test", password })).status,401);
+  assert.equal((await f.request("",undefined,owner.cookie)).status,401);
+  await assert.rejects(verifyGrant(f.auth,f.accounts,f.baseURL,"Bearer "+stale));
+  assert.equal(f.accounts.db.prepare('SELECT user_id FROM accounts WHERE user_id=?').get(owner.id),undefined,"stale JWT must not recreate orphan control state");
+  assert.equal((await verifyGrant(f.auth,f.accounts,f.baseURL,"Bearer "+preserved)).userId,other.id);
+  assert.equal((await f.request("",undefined,other.cookie)).status,200);
+  assert.equal(sha(readFileSync(f.accounts.path(other.id))),otherBytes); assert.deepEqual(f.accounts.get(other.id),otherState);
+  assert.equal(f.database.prepare('PRAGMA foreign_key_check').all().length,0);
+  const latest = captureDeletionWitness(f.directory,witness);
+  assert.throws(()=>restoreBackup({backup:bundle,output:restored,witness,expectedWitnessSha256:latest.sha256}),/Accounts changed/);
+});
+
+test("durable deletion intent blocks capture and resumes after a filesystem interruption", async t => {
+  const f = await fixture(t), owner = await f.signup("interrupted@example.test"), other = await f.signup("kept@example.test");
+  const journal=Journal.open(f.accounts.path(owner.id));journal.write({text:"SYNTHETIC delete",actor:"you"});journal.close();
+  const originalDelete=f.accounts.delete.bind(f.accounts);
+  f.accounts.delete=()=>{throw new Error("Synthetic interrupted filesystem");};
+  assert.throws(()=>createAccountDeletion(f.database,f.accounts)(owner.id),/Synthetic interrupted/);
+  assert.equal((f.database.prepare('SELECT count(*) n FROM kairos_account_deletions').get() as {n:number}).n,1);
+  const witness=join(f.directory,"..","blocked-witness-"+randomBytes(8).toString("hex"));t.after(()=>rmSync(witness,{force:true}));
+  assert.throws(()=>captureDeletionWitness(f.directory,witness),/pending account erasures/);
+  f.accounts.delete=originalDelete;createAccountDeletion(f.database,f.accounts);
+  assert.equal(f.database.prepare('SELECT id FROM "user" WHERE id=?').get(owner.id),undefined);
+  assert.ok(f.database.prepare('SELECT id FROM "user" WHERE id=?').get(other.id));
+  assert.equal((f.database.prepare('SELECT count(*) n FROM kairos_account_deletions').get() as {n:number}).n,0);
 });

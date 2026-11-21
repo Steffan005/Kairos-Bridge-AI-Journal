@@ -121,5 +121,20 @@ sign-in even while the native journal is open.
   Explicit postmigration validation succeeds; an incomplete persisted schema
   still rejects startup. No validation was bypassed or disabled.
 
-These results used disposable fixtures. Actual sender verification, delivered
-mail, deployed-source checks, and owner account acceptance remain pending.
+These checks used disposable local fixtures. The following recorded acceptance
+covered the configured invited service separately.
+
+## October 15 invited owner acceptance
+
+- The tested service source was [5c7729c](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/commit/5c7729c46308d658a50d8f5dd19f19a3adb1f082).
+  A disposable real-mail trial completed email confirmation and password reset.
+- A combined before-and-after check on the invited owner's account preserved the
+  prior journal records and approvals and found the previous sign-in session
+  absent. The existing approved ChatGPT connection could still read and write
+  without reconnection.
+- The owner opened [Kairos for iPhone](https://github.com/Steffan005/Kairos-Bridge-iOS)
+  TestFlight 0.1.0 build 7, saw the prior notes and verified account status, and
+  reached the account controls.
+
+The combined check covers both owner changes together. Independent onboarding
+and separate live recovery checks for other providers remain open.
