@@ -183,6 +183,7 @@ test("navigation, labels, password bounds and signup-only test wording remain ex
     const html = page(view, undefined, { accountRecovery: true }).html;
     for (const input of html.matchAll(/<input\b[^>]*\bid="([^"]+)"[^>]*>/g)) {
       assert.ok(html.includes(`for="${input[1]}"`), `${view} labels ${input[1]}`);
+      if (input[0].includes('type="checkbox"')) continue;
       assert.match(input[0], /autocomplete="(?:email|username|current-password|new-password)"/);
       if (input[0].includes('type="password"')) assert.match(input[0], /minlength="12" maxlength="128"/);
     }

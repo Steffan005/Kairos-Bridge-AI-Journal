@@ -56,7 +56,7 @@ export function makeAuth(baseURL: string, secret: string, accounts: Accounts, op
     // Account recovery has owner-bound, single-use records and atomic cleanup in
     // accountAccess.ts. Raw library routes would bypass those invariants.
     disabledPaths: ["/token", "/change-email", "/verify-email", "/send-verification-email",
-      "/request-password-reset", "/reset-password", "/change-password"],
+      "/request-password-reset", "/reset-password", "/change-password", "/delete-user", "/delete-user/callback"],
     emailAndPassword: { enabled: true, minPasswordLength: 12 },
     session: { cookieCache: { enabled: false } },
     // Render's public edge routes through Cloudflare. Use its single overwritten
@@ -240,6 +240,7 @@ export async function verifyGrant(auth: KairosAuth, accounts: Accounts, baseURL:
     adapter.findOne<{ disabled: boolean }>({ model: "oauthClient", where: [{ field: "clientId", value: azp }] }),
     adapter.findOne<{ scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: sub }, { field: "clientId", value: azp }] }),
   ]);
+  if (!user) throw new AccessError(401, "This account no longer exists");
   const account = accounts.get(sub);
   // Browser sign-out does not revoke an approved AI connection. Owner Disconnect does.
   if (!user || !client || client.disabled || !consent || !scopes.every(s => consent.scopes.includes(s)) || account.deleted || account.epoch !== epoch) {
