@@ -108,7 +108,7 @@ async function createService(options: ServiceSettings) {
   const accountAccess = createAccountAccess({ auth, database, accounts, baseURL, deleteAccount, delivery: options.accountDelivery, backgroundTaskHandler: recoveryGate.track });
   const owner = async (req: http.IncomingMessage) => {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
-    if (!session) throw new AccessError(401, "Please sign in to Kairos");
+    if (!session || accounts.isErasing(session.user.id)) throw new AccessError(401, "Please sign in to Kairos");
     return session.user.id;
   };
   const handleRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {
@@ -179,6 +179,7 @@ async function createService(options: ServiceSettings) {
         // Removing/changing a library consent also invalidates already-issued JWTs.
         const consentMutation = ["/api/auth/oauth2/delete-consent", "/api/auth/oauth2/update-consent"].includes(path);
         const existingSession = await auth.api.getSession({ headers, query: { disableCookieCache: true, disableRefresh: true } });
+        if (existingSession && accounts.isErasing(existingSession.user.id)) throw new AccessError(401, "This account is being deleted");
         const sessionOwner = consentMutation ? await owner(req) : undefined;
         const dispatchAuth = () => auth.handler(new Request(target, { method, headers, ...(bytes ? { body: new Uint8Array(bytes) } : {}) }));
         // An old-password sign-in must finish before reset removes its session;
@@ -199,6 +200,7 @@ async function createService(options: ServiceSettings) {
         const lockOwner = grantOwner ?? signInOwner ?? (authPath !== "/get-session" ? existingSession?.user.id : undefined);
         const response = lockOwner ? await accounts.locked(lockOwner, async () => {
           if (existingSession && !(await auth.api.getSession({ headers, query: { disableCookieCache: true, disableRefresh: true } }))) throw new AccessError(401, "Please sign in to Kairos");
+          if (accounts.isErasing(lockOwner)) throw new AccessError(401, "This account is being deleted");
           if (!(database.prepare('SELECT id FROM "user" WHERE id=?').get(lockOwner))) throw new AccessError(401, "Please sign in to Kairos");
           const response = await dispatchAuth();
           if (response.ok && sessionOwner) await disconnect(auth, accounts, sessionOwner);

@@ -11,6 +11,10 @@ export type Account = { user_id: string; epoch: number; deleted: number; journal
 /** A journal path and generation are controlled by verified account identity only. */
 export class Accounts {
   readonly db: Database.Database;
+  private erasing = new Set<string>();
+  markErasing(userId: string): void { this.erasing.add(userId); }
+  finishErasing(userId: string): void { this.erasing.delete(userId); }
+  isErasing(userId: string): boolean { return this.erasing.has(userId); }
   private locks = new Map<string, Promise<void>>();
   constructor(readonly directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });

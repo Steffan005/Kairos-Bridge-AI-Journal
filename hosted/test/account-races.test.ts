@@ -181,3 +181,19 @@ test("a concurrent raw get-session refresh cannot recreate a session removed by 
     assert.equal((await f.context.adapter.findMany({ model: "session", where: [{ field: "userId", value: f.user.id }] })).length, 0);
   } finally { resume.resolve(); f.context.internalAdapter.updateSession = originalUpdate; await refresh; }
 });
+
+test("an interrupted account erasure blocks sessions, journal recreation and AI access without blocking another user", { timeout: 20_000 }, async t => {
+  const f = await fixture(t), grant = await f.grant();
+  const issued = await f.tokenRequest({ grant_type: "authorization_code", client_id: grant.clientId, redirect_uri: "https://ai.example.test/callback",
+    code: grant.code, code_verifier: grant.verifier, resource: f.baseURL + "/mcp" });
+  assert.equal(issued.status,200); const tokens=await issued.json();
+  const other=await f.post("/api/auth/sign-up/email",{email:"other-erasure@example.test",password:"synthetic-other-password",name:"Other synthetic user"});assert.equal(other.status,200);
+  const otherCookie=other.headers.getSetCookie().map(c=>c.split(";",1)[0]).join("; ");
+  f.service.accounts.markErasing(f.user.id);
+  assert.equal((await f.request("/api/journal",{headers:{cookie:f.cookie}})).status,401);
+  assert.equal((await f.post("/api/journal/create",{},f.cookie)).status,401);
+  assert.equal((await f.request("/api/auth/get-session",{headers:{cookie:f.cookie}})).status,401);
+  assert.equal((await f.post("/api/auth/sign-in/email",{email:"race@recovery-fixture.org",password:"synthetic-race-password"})).status,401);
+  assert.equal((await f.request("/mcp",{method:"POST",headers:{"content-type":"application/json",accept:"application/json, text/event-stream",authorization:"Bearer "+tokens.access_token},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"})})).status,401);
+  assert.equal((await f.post("/api/journal/notes",{text:"SYNTHETIC other user remains available",tags:[]},otherCookie)).status,201);
+});

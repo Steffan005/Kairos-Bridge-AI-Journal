@@ -80,7 +80,7 @@ export function createAccountAccess(options: {
 }) {
   const { auth, database, accounts, delivery } = options;
   const baseURL = new URL(options.baseURL).origin, limits = new AccountLimits();
-  const state = (id: string): State | undefined => database.prepare(
+  const state = (id: string): State | undefined => accounts.isErasing(id) ? undefined : database.prepare(
     'SELECT u.id, u.email, u.emailVerified, a.id AS credentialId, a.password FROM "user" u JOIN "account" a ON a.userId = u.id AND a.providerId = ? WHERE u.id = ?',
   ).get("credential", id) as State | undefined;
   const fingerprint = (user: State) => digest(JSON.stringify([user.credentialId, user.password, user.email, user.emailVerified]));
@@ -94,7 +94,7 @@ export function createAccountAccess(options: {
   };
   const owner = async (headers: Headers): Promise<Session> => {
     const session = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
-    if (!session || !activeSession(session)) throw new AccessError(401, "Please sign in to Kairos");
+    if (!session || accounts.isErasing(session.user.id) || !activeSession(session)) throw new AccessError(401, "Please sign in to Kairos");
     return session;
   };
   const requireDelivery = (): AccountDelivery => {

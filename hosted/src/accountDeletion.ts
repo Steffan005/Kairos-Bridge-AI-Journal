@@ -10,6 +10,7 @@ import type { Accounts } from "./accounts.js";
 export function createAccountDeletion(database: Database.Database, accounts: Accounts) {
   database.exec("CREATE TABLE IF NOT EXISTS kairos_account_deletions (userId TEXT PRIMARY KEY, requestedAt TEXT NOT NULL)");
   function finish(userId: string): void {
+    accounts.markErasing(userId); // Remain blocked after any partial failure.
     accounts.delete(userId);
     database.transaction(() => {
       // Shared registered clients and other users' grants must survive.
@@ -32,6 +33,7 @@ export function createAccountDeletion(database: Database.Database, accounts: Acc
     })();
     accounts.forget(userId);
     database.prepare('DELETE FROM kairos_account_deletions WHERE userId=?').run(userId);
+    accounts.finishErasing(userId);
   }
   for (const row of database.prepare('SELECT userId FROM kairos_account_deletions ORDER BY userId').all() as Array<{ userId: string }>) finish(row.userId);
   return (userId: string): void => {
