@@ -240,7 +240,7 @@ export async function verifyGrant(auth: KairosAuth, accounts: Accounts, baseURL:
     adapter.findOne<{ disabled: boolean }>({ model: "oauthClient", where: [{ field: "clientId", value: azp }] }),
     adapter.findOne<{ scopes: string[] }>({ model: "oauthConsent", where: [{ field: "userId", value: sub }, { field: "clientId", value: azp }] }),
   ]);
-  if (!user) throw new AccessError(401, "This account no longer exists");
+  if (!user || accounts.isErasing(sub)) throw new AccessError(401, "This account no longer exists or is being deleted");
   const account = accounts.get(sub);
   // Browser sign-out does not revoke an approved AI connection. Owner Disconnect does.
   if (!user || !client || client.disabled || !consent || !scopes.every(s => consent.scopes.includes(s)) || account.deleted || account.epoch !== epoch) {

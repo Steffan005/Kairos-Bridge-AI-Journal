@@ -300,9 +300,15 @@ test("durable deletion intent blocks capture and resumes after a filesystem inte
   f.accounts.delete=()=>{throw new Error("Synthetic interrupted filesystem");};
   assert.throws(()=>createAccountDeletion(f.database,f.accounts)(owner.id),/Synthetic interrupted/);
   assert.equal((f.database.prepare('SELECT count(*) n FROM kairos_account_deletions').get() as {n:number}).n,1);
+  assert.equal(f.accounts.isErasing(owner.id),true);
+  assert.equal((await f.request('',undefined,owner.cookie)).status,401);
+  assert.equal((await f.request('/email-change',{newEmail:'blocked@fixture-mail.net',currentPassword:password},owner.cookie)).status,401);
+  assert.equal((await f.request('',undefined,other.cookie)).status,200);
+  assert.equal((await f.request('/delete',{confirmEmail:'interrupted@example.test',currentPassword:password},owner.cookie)).status,401);
   const witness=join(f.directory,"..","blocked-witness-"+randomBytes(8).toString("hex"));t.after(()=>rmSync(witness,{force:true}));
   assert.throws(()=>captureDeletionWitness(f.directory,witness),/pending account erasures/);
   f.accounts.delete=originalDelete;createAccountDeletion(f.database,f.accounts);
+  assert.equal(f.accounts.isErasing(owner.id),false);
   assert.equal(f.database.prepare('SELECT id FROM "user" WHERE id=?').get(owner.id),undefined);
   assert.ok(f.database.prepare('SELECT id FROM "user" WHERE id=?').get(other.id));
   assert.equal((f.database.prepare('SELECT count(*) n FROM kairos_account_deletions').get() as {n:number}).n,0);
