@@ -42,6 +42,12 @@ export class Accounts {
     this.db.prepare("UPDATE accounts SET deleted = 1, journal_generation = journal_generation + 1 WHERE user_id = ?").run(userId);
     for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(this.path(userId) + suffix, { force: true });
   }
+  /** Called only after durable account erasure removed the journal. */
+  forget(userId: string): void {
+    const row = this.db.prepare("SELECT deleted FROM accounts WHERE user_id=?").get(userId) as { deleted: number } | undefined;
+    if (row && !row.deleted) throw new Error("Delete the journal before erasing account control state");
+    this.db.prepare("DELETE FROM accounts WHERE user_id=?").run(userId);
+  }
   recreate(userId: string): void {
     if (!this.get(userId).deleted) throw new Error("The journal already exists");
     this.db.prepare("UPDATE accounts SET deleted = 0, epoch = epoch + 1, journal_generation = journal_generation + 1 WHERE user_id = ?").run(userId);

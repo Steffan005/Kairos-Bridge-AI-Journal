@@ -1,6 +1,6 @@
 {
   "name": "kairos-journal-hosted-preview",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
@@ -12,7 +12,7 @@
     "start": "node dist/hosted/src/main.js",
     "start:staging": "node dist/hosted/src/staging-main.js",
     "recovery": "node dist/hosted/src/recovery-main.js",
-    "test": "npm run build && node --test --test-concurrency=1 dist/hosted/test/*.test.js",
+    "test": "npm run build && node ../scripts/run-tests.mjs dist/hosted/test",
     "recovery:request": "node dist/hosted/src/recovery-client.js",
     "test:vault": "node --test test/recovery-vault.test.mjs"
   },
@@ -22,7 +22,8 @@
     "@modelcontextprotocol/sdk": "1.32.1",
     "better-auth": "1.7.7",
     "better-sqlite3": "12.11.1",
-    "jose": "6.2.12"
+    "jose": "6.2.12",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",

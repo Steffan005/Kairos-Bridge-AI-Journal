@@ -10,16 +10,16 @@ Created by **Steffan Douglas Haskins**. Copyright (C) 2026 Steffan Douglas Haski
 
 ## Start here
 
-Choose the part of Kairos you want to use or inspect. These are separate components with different setup and availability.
+Start with the [setup guide](START_HERE.md) or choose the part of Kairos you want to use.
 
 | Component | What it does | Availability and source |
 |---|---|---|
-| **Local Journal engine** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | This branch includes the extended engine. [Run it locally](#run-the-local-journal). The older main snapshot lacks the continuation additions. |
-| **Project continuation** | Source-linked project briefings, explicit corrections/resolutions and addressed handoffs work through the local MCP engine as well as the account adapter. | [Continuation contract](hosted/CONTINUE.md). These features depend on this engine revision, not remote hosting. |
+| **Local Journal engine** | Stores a journal on your computer and exposes it to configured MCP clients such as Claude Desktop and Cursor. | [Run it locally](#run-the-local-journal). Your journal is a file on the computer running the engine. |
+| **Project continuation** | Source-linked project briefings, explicit corrections/resolutions and addressed handoffs work through the local MCP engine as well as the account adapter. | [Continuation contract](hosted/CONTINUE.md). The same continuation tools work with local MCP clients. |
 | **Optional account / connection service** | Adds account sign-in, OAuth-approved connections and owner controls around the same engine. Operators can run it on their own computer or server. | [Adapter setup and evidence](hosted/README.md). The managed invited pilot is one deployment. |
-| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). Latest documented accepted owner beta: 0.1.0 build 6, October 14, 2026. Independent onboarding and public App Store release remain ahead. |
+| **Kairos for iPhone** | The Kairos app provides native search, note entry and connection controls. Its journal view is **Anamnesis — Your journal**. | [Native companion](https://github.com/Steffan005/Kairos-Bridge-iOS). The owner accepted TestFlight 0.1.0 build 7 on October 15, 2026 using the configured account service. Independent onboarding and public App Store release remain ahead. |
 
-The instructions below run **this branch's extended Journal engine locally**, with no account service required. The optional account adapter stores per-account files under an operator-selected data directory on the computer or server where it runs. The iPhone app has separate source and a configured service connection.
+The instructions below run **Kairos Journal locally** without an account. The optional account adapter stores per-account files under an operator-selected data directory on the computer or server where it runs. The iPhone app has separate source and a configured service connection.
 
 For optional sign-in and remote-client access, begin with the [account adapter](hosted/README.md). The [Continue contract](hosted/CONTINUE.md) covers local-engine project briefings and addressed handoffs as well as service use.
 
@@ -60,15 +60,15 @@ See [Continue and origin contract](hosted/CONTINUE.md) for arguments, hash compa
 
 ## Run the local journal
 
-You need **Node.js 20 or newer** ([nodejs.org](https://nodejs.org), LTS version recommended).
+Use a supported [Node.js LTS release](https://nodejs.org/en/about/previous-releases), such as Node.js 24.
 
 ```bash
 # 1. Get the code
-git clone --branch chatgpt/private-journal-service https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git
+git clone https://github.com/Steffan005/Kairos-Bridge-AI-Journal.git
 cd Kairos-Bridge-AI-Journal
 
 # 2. Install and build
-npm install
+npm ci
 npm run build
 
 # 3. Create your journal and check it
@@ -78,9 +78,13 @@ node dist/src/cli.js stats
 
 Then configure a supported AI app (below) and restart it. In a new chat, ask: *"Check my journal, then remember that I prefer short answers."*
 
-> **If `npm install` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
+> **If `npm ci` fails while building `better-sqlite3`:** that library ships ready-made binaries for common setups, and when none fits your machine it compiles from source, which needs build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `sudo apt install build-essential`). Using the current Node LTS usually avoids this.
 
 ---
+
+### Upgrading an existing local journal
+
+Close any AI clients or other processes using the journal. Run the older CLI's `verify` command and make a backup of the stopped journal file before first opening it with the newer engine. If SQLite leaves a `-wal` file alongside it, use a consistent SQLite backup rather than copying only the main file. The newer engine preserves previous records and hashes. If you need to go back, restore the pre-upgrade backup to a separate path and retain the newer journal so its later entries remain available. The older verifier cannot verify new entries carrying continuation or authenticated delivery fields.
 
 ## Connect it to your AI app
 
@@ -148,7 +152,7 @@ node dist/src/server.js --http --port 8787
 - With no token set, it accepts requests only when they're addressed to `localhost`/`127.0.0.1`. That blocks web pages from reaching it through DNS tricks. To accept a tunnel's hostname without a token, list it in `KAIROS_JOURNAL_ALLOWED_HOSTS`, though using a token is strongly recommended.
 - Endpoint: `POST /mcp` (MCP Streamable HTTP, stateless). `GET /healthz` returns `{"ok":true}`.
 
-The following table describes the **local package and its HTTP mode**, based on the October 2026 setup notes. Provider interfaces and account availability change; check the linked provider documentation. The separate [hosted pilot](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md) implements account sign-in and has its own provider acceptance records.
+The following table describes the **local package and its HTTP mode**, based on the October 2026 setup notes. Provider interfaces and account availability change; check the linked provider documentation. The separate [hosted pilot](hosted/README.md) implements account sign-in and has its own provider acceptance records.
 
 | App | How it connects | Documented local-package path |
 |---|---|---|
@@ -175,7 +179,7 @@ The folder is created private to you (permissions `700`, file `600` on macOS/Lin
 
 - **Local mode stores the journal on your computer.** The stdio server makes no network connections of its own; it reads and writes the local file.
 - **Connected AI apps receive the notes they retrieve.** If that app uses a cloud provider, those notes are processed under the provider's policies. Connect apps you trust with your journal.
-- **Account-service storage follows the operator's deployment.** The adapter keeps per-account journals under its configured data directory, on the computer or server where it runs. Its account controls, active deletion and recovery-copy retention are documented in the [service adapter](https://github.com/Steffan005/Kairos-Bridge-AI-Journal/blob/bf34e13b6c131d069b84b2e2c56cae3f14774fe8/hosted/README.md#revocation-retention-and-integrity-details). The managed pilot is one installation; an AI connection alone does not establish where a journal is stored.
+- **Account-service storage follows the operator's deployment.** The adapter keeps per-account journals under its configured data directory, on the computer or server where it runs. Its account controls, active deletion and recovery-copy retention are documented in the [service adapter](hosted/README.md#revocation-retention-and-integrity-details). The managed pilot is one installation; an AI connection alone does not establish where a journal is stored.
 - The AI is told never to save secrets, and the server rejects text that clearly looks like a password, API key, private key, payment card or Social Security number. That check is a safety net, not a guarantee.
 - The AI is also told that journal entries are notes, not instructions, so it doesn't obey text that someone slipped into an entry.
 
@@ -226,11 +230,11 @@ Reproduce it: `npm run bench` (or `node dist/bench/storage-bench.js --entries 30
 ## For developers
 
 - **Stack:** TypeScript, Node 20+, [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) 1.32, [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) 12 with the FTS5 full-text index (Porter stemming), and `zod` for input schemas.
-- **Hash rule:** `hash = sha256( JSON.stringify(["kairos-journal/v1", id, created_at, tick, actor, kind, text, tags, parent_hash]) )`, as lowercase hex. The first entry's `parent_hash` is `"0" × 64`. A JSON export carries everything needed to re-verify the chain in any language without SQLite.
+- **Hash rule:** The Journal hashes a versioned JSON array with SHA-256. Older records retain their original bytes and hashes. New entries with import provenance, authenticated delivery or continuity fields use the corresponding [canonical serialization](src/canonical.ts). The first entry's `parent_hash` is 64 zeros. A JSON export includes the fields needed to check the chain.
 - **Append-only at three levels:** there are no delete or edit tools; database triggers abort any UPDATE or DELETE; and the hash chain reveals anyone who bypasses the triggers with raw file access. `verify` also catches rows removed from the middle (gaps in sequence numbers) or from the end (SQLite's sequence counter runs ahead of the last row).
 - **Pins** live in a small separate table outside the chain, because pinning is a display preference and doesn't change what was written.
 - **Concurrency:** WAL mode with a 5-second busy timeout. Each write is one immediate transaction, so several apps can share one journal.
-- **Tests:** `npm test` runs 29 tests: chain integrity, tamper detection (edit, re-hash, delete-middle, delete-tail), search, the wake size cap, the secret filter, export, an end-to-end MCP client over stdio (list tools → write → wake → search → verify), HTTP mode (bearer token, Host checks, refusal to bind publicly without a token), and licensing (the LICENSE file is the unmodified official text, every source file has its SPDX header, and `journal_about`, `/about` and the server info report the license and source location).
+- **Tests:** `npm test` runs the local Journal suite, including chain integrity, tamper detection (edit, re-hash, delete-middle, delete-tail), search, the wake size cap, the secret filter, export, an end-to-end MCP client over stdio (list tools → write → wake → search → verify), HTTP mode (bearer token, Host checks, refusal to bind publicly without a token), and licensing (the LICENSE file is the unmodified official text, every source file has its SPDX header, and `journal_about`, `/about` and the server info report the license and source location).
 
 ```
 src/

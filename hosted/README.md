@@ -14,7 +14,7 @@ Save context in one supported AI app and bring it into your next conversation in
 - **Owner controls.** Download the journal, disconnect all AI access, or delete the active journal. Signing out and disconnecting have different effects; retention details are below.
 - **Journal search.** The owner API supports Words, Exact phrase and Note ID searches with snapshot paging for the native client.
 
-Local storage and self-hosting are core Journal choices. This account adapter is a service operators can deploy; the existing managed invited pilot is one deployment. The [local desktop package](../README.md#run-the-local-journal), this hosted adapter and the [native iPhone companion](https://github.com/Steffan005/Kairos-Bridge-iOS) have separate setup and release states. The native Kairos app presents its journal as **Anamnesis — Your journal**. The latest documented owner-accepted native beta is 0.1.0 build 6, October 14, 2026. This adapter's browser screens support the invited pilot; they are not the final app design.
+Local storage and self-hosting are core Journal choices. This account adapter is a service operators can deploy; the existing managed invited pilot is one deployment. The [local desktop package](../README.md#run-the-local-journal), this hosted adapter and the [native iPhone companion](https://github.com/Steffan005/Kairos-Bridge-iOS) have separate setup and release states. The native Kairos app presents its journal as **Anamnesis — Your journal**. The latest documented owner-accepted native beta is 0.1.0 build 7, October 15, 2026. This adapter's browser screens support the invited pilot; they are not the final app design.
 
 ## Start with the evidence
 
@@ -32,7 +32,7 @@ The local development entry point accepts loopback HTTP; invited staging require
 
 ## Run the acceptance checks
 
-Requires Node 20.19 or later and the root package dependencies:
+Use a supported Node.js LTS release, such as Node.js 24. Install the root package dependencies first:
 
 ```sh
 npm ci
@@ -49,7 +49,7 @@ The separate [whole-journal owner search API](OWNER_SEARCH.md) adds snapshot pag
 
 ## Project continuation and delivery evidence
 
-See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. These are features of this branch's shared engine, available through [local MCP operation](../README.md#run-the-local-journal) as well as this adapter; they are absent from the older main snapshot. Schema 3 preserves existing records and hashes. On the authenticated account-service path, new notes separately record the connection that delivered them; the Author label remains declared attribution. Local MCP operation has no invented authenticated origin and uses an explicit recipient selector for addressed handoffs. Delivery origin is server-observed evidence, not provider-signed note content. These engine changes do not add a native briefing screen.
+See [CONTINUE.md](CONTINUE.md) for source-linked project briefings, explicit correction/resolution links and addressed handoffs. These are features of the shared Journal engine, available through [local MCP operation](../README.md#run-the-local-journal) as well as this adapter. Schema 3 preserves existing records and hashes. On the authenticated account-service path, new notes separately record the connection that delivered them; the Author label remains declared attribution. Local MCP operation has no invented authenticated origin and uses an explicit recipient selector for addressed handoffs. Delivery origin is server-observed evidence, not provider-signed note content. These engine changes do not add a native briefing screen.
 
 ## Run the local screens
 
@@ -84,7 +84,7 @@ See [STAGING.md](STAGING.md), the [Render Blueprint](../render.yaml), and the [d
 
 - Independent-user onboarding and first-time Claude/ChatGPT connector creation entirely on an iPhone. Grok custom-connector creation in Safari passed for the owner. Phone signup and reconnection of an existing Claude connector passed; the earlier fixed-token spike is separate evidence.
 - Automatic backup scheduling, current deletion authority, retention/erasure, monitoring and customer-scale load behavior. The [October 15 hosted recovery rehearsal](RECOVERY_ACCEPTANCE_2026-10-15.md) restored an actual encrypted capture into an isolated process; it did not replace the live journal or establish automatic backups. One-process SQLite remains a staging architecture.
-- Real email delivery and owner acceptance of the [new email/recovery flow](ACCOUNT_RECOVERY.md), public customer signup, account deletion, per-provider disconnect controls, and independent review before real customer data. New signup remains limited to invited test addresses; a verified change keeps that existing account's journal.
+- Public customer signup, account deletion, per-provider disconnect controls, and independent review before real customer data. [Email change and recovery](ACCOUNT_RECOVERY.md#october-15-invited-owner-acceptance) passed a disposable real-mail trial and a separate invited owner check. New signup remains limited to invited test addresses; a verified change keeps that existing account's journal.
 - Public App Store release and independent native onboarding. A separate signed iOS client has been installed through TestFlight by the owner, and its Claude round trip, reopen, sign-out, Disconnect, export and bounded offline checks passed. Updated-build fault cases and independent-user acceptance remain open. The Journal adapter does not package or sign that client.
 
 ## Revocation, retention, and integrity details
@@ -97,7 +97,7 @@ Journal verification is the existing hash-chain check. OAuth signatures authenti
 
 ## Source and references
 
-AGPL-3.0-or-later; preserve the attribution and copyright in [NOTICE](../NOTICE). Corresponding source includes both this adapter and the root engine. The preview is published on the `chatgpt/private-journal-service` branch; deployment must offer its actual source revision.
+AGPL-3.0-or-later; preserve the attribution and copyright in [NOTICE](../NOTICE). Corresponding source includes both this adapter and the root engine. The invited preview has its own deployment history. Each deployment must offer its actual source revision.
 
 Primary references checked October 10, 2026:
 
