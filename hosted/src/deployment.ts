@@ -4,6 +4,7 @@
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 import type { AccountDelivery } from "./accountAccess.js";
+import type { PilotInvitation } from "./pilotInvitations.js";
 
 export interface PreviewOptions { baseURL: string; directory: string; secret: string; accountDelivery?: AccountDelivery }
 export interface StagingOptions extends PreviewOptions {
@@ -11,6 +12,7 @@ export interface StagingOptions extends PreviewOptions {
   inviteCode: string;
   sourceRevision: string;
   trustedEdge?: "render-cloudflare";
+  pilotInvitations?: PilotInvitation[];
 }
 export interface ServiceSettings extends PreviewOptions {
   kind: "local-private-preview" | "hosted-invited-staging";
@@ -19,6 +21,7 @@ export interface ServiceSettings extends PreviewOptions {
   inviteCode?: string;
   sourceURL: string;
   trustedEdge?: "render-cloudflare";
+  pilotInvitations?: PilotInvitation[];
 }
 const source = "https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/";
 function origin(baseURL: string): URL {
@@ -45,5 +48,6 @@ export function stagingSettings(options: StagingOptions): ServiceSettings {
   if (typeof options.inviteCode !== "string" || options.inviteCode.length < 32) throw new Error("Set a random staging invitation secret of at least 32 characters");
   if (!/^[a-f0-9]{40}$/.test(options.sourceRevision)) throw new Error("Set the deployed Git commit for the corresponding-source link");
   if (options.trustedEdge !== undefined && options.trustedEdge !== "render-cloudflare") throw new Error("Unsupported trusted staging edge");
+  if (options.pilotInvitations && !options.accountDelivery) throw new Error("Pilot invitations require configured account email delivery");
   return { ...options, baseURL: url.origin, kind: "hosted-invited-staging", listenHost: "0.0.0.0", listenPort: options.port, sourceURL: source + options.sourceRevision };
 }

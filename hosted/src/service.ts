@@ -22,6 +22,7 @@ import { decodeHistoryImportBody, MAX_HISTORY_IMPORT_BODY, parseHistoryImport } 
 import { streamJournalExport } from "./journalExport.js";
 import { oauthWriteOrigin, ownerWriteOrigin } from "./writeOrigin.js";
 import { createAccountAccess } from "./accountAccess.js";
+import { createPilotRegistration } from "./pilotInvitations.js";
 import { previewSettings, stagingSettings, type PreviewOptions, type StagingOptions, type ServiceSettings } from "./deployment.js";
 export type { PreviewOptions, StagingOptions } from "./deployment.js";
 
@@ -91,12 +92,14 @@ async function createService(options: ServiceSettings) {
   try { initialized = makeAuth(baseURL, options.secret, accounts, { staging, trustedEdge: options.trustedEdge, backgroundTaskHandler: recoveryGate.track }); }
   catch (error) { accounts.close(); releaseLease(); throw error; }
   const { auth, database } = initialized;
+  let pilotRegistration: ReturnType<typeof createPilotRegistration> | undefined;
   try {
     await migrateAuth(auth, database);
     // Better Auth returns its initialized context while a cached schema check
     // can still be querying SQLite. Await that work too before allowing close.
     const context = await auth.$context;
     await context.checkSchema?.();
+    if (staging && options.pilotInvitations) pilotRegistration = createPilotRegistration({ auth, database, baseURL, invitations: options.pilotInvitations });
   } catch (error) { database.close(); accounts.close(); releaseLease(); throw error; }
   const metadataHandler = oauthProviderAuthServerMetadata(auth);
   const accountAccess = createAccountAccess({ auth, database, accounts, baseURL, delivery: options.accountDelivery, backgroundTaskHandler: recoveryGate.track });
@@ -128,6 +131,12 @@ async function createService(options: ServiceSettings) {
         scopes_supported: ["journal:read", "journal:write", "offline_access"], bearer_methods_supported: ["header"], resource_name: "Kairos Journal",
       });
       const headers = fromNodeHeaders(req.headers);
+      if (path === "/api/pilot/register") {
+        if (!pilotRegistration) throw new AccessError(404, "Pilot registration is not enabled");
+        if (method !== "POST") throw new AccessError(405, "Use POST");
+        if (req.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new AccessError(415, "Use application/json");
+        return forward(res, await pilotRegistration(JSON.parse((await body(req)).toString()), headers));
+      }
       if (["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/api/auth"].includes(path) && method === "GET") {
         return forward(res, await metadataHandler(new Request(target, { headers })));
       }
@@ -153,7 +162,7 @@ async function createService(options: ServiceSettings) {
           throw new AccessError(415, "OAuth token requests require application/x-www-form-urlencoded");
         }
         let bytes = ["GET", "HEAD"].includes(method) ? undefined : await body(req);
-        if (path === "/api/auth/sign-up/email") {
+        if (authPath === "/sign-up/email" && method === "POST") {
           const input = JSON.parse(bytes!.toString());
           if (typeof input.email !== "string" || !input.email.toLowerCase().endsWith(".test")) throw new AccessError(400, "Use a synthetic email ending in .test for this preview");
           if (staging) {
@@ -212,8 +221,9 @@ async function createService(options: ServiceSettings) {
           finally { await transport.close(); await mcp.close(); journal.close(); }
         });
       }
-      if (["/", "/sign-in", "/journal", "/consent", "/account", "/forgot-password", "/reset-password", "/confirm-email"].includes(path)) {
+      if (["/", "/sign-in", "/join", "/journal", "/consent", "/account", "/forgot-password", "/reset-password", "/confirm-email"].includes(path)) {
         if (method !== "GET") throw new AccessError(405, "Use GET");
+        if (path === "/join" && !pilotRegistration) throw new AccessError(404, "Pilot registration is not enabled");
         if (path === "/") { res.writeHead(302, { location: "/journal" }); return res.end(); }
         let consent;
         if (path === "/consent") {
