@@ -4,7 +4,7 @@ services:
     name: kairos-journal-staging
     runtime: node
     repo: https://github.com/Steffan005/Kairos-Bridge-AI-Journal
-    branch: chatgpt/private-journal-service
+    branch: main
     region: virginia
     plan: 0.5c-512mb
     numInstances: 1

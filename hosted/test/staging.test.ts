@@ -10,7 +10,7 @@ import net from "node:net";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { createStaging } from "../src/service.js";
-import { stagingSettings } from "../src/deployment.js";
+import { previewSettings, stagingSettings } from "../src/deployment.js";
 import { CLAUDE_CONNECTOR_CLIENT_ID, CHATGPT_CONNECTOR_CLIENT_ID, CURSOR_CONNECTOR_CLIENT_ID, GROK_CONNECTOR_CLIENT_ID, MUSE_CONNECTOR_CLIENT_ID, MUSE_CONNECTOR_REDIRECT_URI, isGeminiConnectorClientId, isStagingClientAllowed } from "../src/auth.js";
 
 const baseURL = "https://journal.example.test";
@@ -30,6 +30,14 @@ test("Gemini metadata admission is bound to Google's exact user-bound path and t
     assert.equal(isGeminiConnectorClientId(clientId, origin), false, origin);
   }
 });
+test("preview source follows main and invited staging names the deployed revision", () => {
+  const source = "https://github.com/Steffan005/Kairos-Bridge-AI-Journal/tree/";
+  const preview = { baseURL: "http://127.0.0.1:8000", directory: "/var/data/kairos", secret: "s".repeat(32) };
+  assert.equal(previewSettings(preview).sourceURL, source + "main");
+  const staging = { ...preview, baseURL, inviteCode: "i".repeat(32), sourceRevision: revision, port: 10000 };
+  assert.equal(stagingSettings(staging).sourceURL, source + revision);
+});
+
 test("staging configuration rejects ambiguous or insecure deployment settings", () => {
   assert.equal(isStagingClientAllowed(CLAUDE_CONNECTOR_CLIENT_ID), true);
   assert.equal(isStagingClientAllowed(CHATGPT_CONNECTOR_CLIENT_ID), true);
